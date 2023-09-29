@@ -1,3 +1,9 @@
+# ignore .DS_Store
+.DS_Store
+
+# ignore csv files located in the csv folder
+csv/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
