@@ -5,6 +5,9 @@
 csv/
 .csv
 
+# ignore tokesn folder
+tokens/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
