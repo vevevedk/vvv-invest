@@ -3,8 +3,13 @@ import pandas as pd
 
 def extract_info_from_filename(file_path):
     file_name = os.path.basename(file_path).split('.')[0]  # Get the file name without the extension
-    parts = file_name.split('-')
     
+    # Split the filename by '-' and check if it has the expected number of parts
+    parts = file_name.split('-')
+    if len(parts) < 3:
+        print("Filename:", file_name)
+        raise ValueError("Filename does not have the expected format")
+
     # Extracting the ticker
     ticker = parts[0]
     
@@ -17,11 +22,15 @@ def extract_info_from_filename(file_path):
     start_idx_date = file_name.rfind("-") - 5  # +1 to move past the last "-"
     updated_date_raw = file_name[start_idx_date:start_idx_date + 10]
     updated_date_parts = updated_date_raw.split("-")
-    updated_date = updated_date_parts[2] + updated_date_parts[0] + updated_date_parts[1] # Reformatting to yyyymmdd
+    if len(updated_date_parts) != 3:
+        print("Updated date:", updated_date_parts)
+        raise ValueError("Updated date does not have the expected format")
+    updated_date = updated_date_parts[2] + updated_date_parts[0] + updated_date_parts[1]  # Reformatting to yyyymmdd
     
     return ticker, expiration_date, updated_date
 
 def process_file(file_path):
+    print("processing file")
     data = pd.read_csv(os.getcwd()+ "/csv/" + file_path)
     
     ticker, expiration_date, updated_date = extract_info_from_filename(file_path)
