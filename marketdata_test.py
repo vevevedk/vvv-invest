@@ -3,6 +3,26 @@ import pandas as pd
 from datetime import datetime
 
 
+def convert_unix_to_datetime(unix_time):
+    """Convert Unix timestamp to a human-readable datetime format."""
+    if unix_time:
+        # Try to convert assuming the timestamp is in seconds
+        try:
+            dt = datetime.utcfromtimestamp(unix_time)
+            if dt.year < 1970 or dt.year > 2038:  # Plausibility check
+                raise ValueError("Timestamp out of range, likely not in seconds.")
+            return dt.strftime('%Y-%m-%d %H:%M:%S')
+        except (OSError, ValueError):
+            pass
+
+        # Try to convert assuming the timestamp is in milliseconds
+        try:
+            dt = datetime.utcfromtimestamp(unix_time / 1000.0)
+            return dt.strftime('%Y-%m-%d %H:%M:%S')
+        except (OSError, ValueError):
+            return None
+    return None
+
 def get_options_chain(ticker, expiration_date, api_key, request_counter):
     url = f"https://api.marketdata.app/v1/options/chain/{ticker}"
     params = {
@@ -24,7 +44,7 @@ def get_options_chain(ticker, expiration_date, api_key, request_counter):
             #print("Data Returned:", data) 
             return pd.DataFrame(data), request_counter
         else:
-            print(f"No data returned for {params['symbol']} with expiration {params['expiration']}")
+            print(f"No data returned for {ticker} with expiration {params['expiration']}")
 
     if response.status_code == 203:
         data = response.json()
@@ -32,7 +52,7 @@ def get_options_chain(ticker, expiration_date, api_key, request_counter):
             #print("Data Returned:", data) 
             return pd.DataFrame(data), request_counter
         else:
-            print(f"No data returned for {params['symbol']} with expiration {params['expiration']}")
+            print(f"No data returned for {ticker} with expiration {params['expiration']}")
 
     # Print the response content for inspection
     print(f"Response content for {ticker} with expiration {expiration_date}: {response.content}")
@@ -46,8 +66,8 @@ def get_options_chain(ticker, expiration_date, api_key, request_counter):
     options_data = []
     for option in data['data']:
         options_data.append({
-            "Updated Date": option.get('updated_at'),
-            "Expiration Date": option.get('expiration'),
+            "Updated Date": convert_unix_to_datetime(option.get('updated_at')),
+            "Expiration Date": convert_unix_to_datetime(option.get('expiration')),
             "Ticker": option.get('ticker'),
             "Strike": option.get('strike'),
             "Last": option.get('last'),
@@ -69,10 +89,10 @@ def get_options_chain(ticker, expiration_date, api_key, request_counter):
     return pd.DataFrame(options_data), request_counter
 
 # List of tickers and expiration dates
-tickers = ['spy', 'qqq', 'iwm', 'gld', 'appl', 'meta', 'msft', 'enph']
-#tickers = ['spy']
-expiration_dates = ['2024-06-14', '2024-06-21', '2024-06-28']
-#expiration_dates = ['2024-06-14']
+#tickers = ['spy', 'qqq', 'iwm', 'gld', 'appl', 'meta', 'msft', 'enph']
+tickers = ['spy']
+#expiration_dates = ['2024-06-14', '2024-06-21', '2024-06-28']
+expiration_dates = ['2024-06-21']
 
 # Your MarketData API key
 api_key = 'S0k2QXNsMFpEVlZZWXFlOXlEajJYcWlwZFA3XzRnYVJKVTVyZlFMbS1mUT0'
