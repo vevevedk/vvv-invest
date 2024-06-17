@@ -2,12 +2,11 @@ import requests
 import pandas as pd
 from datetime import datetime
 
-
 def convert_unix_to_datetime(unix_time):
     """Convert Unix timestamp to a human-readable datetime format."""
     if unix_time:
-        # Try to convert assuming the timestamp is in seconds
         try:
+            # Try to convert assuming the timestamp is in seconds
             dt = datetime.utcfromtimestamp(unix_time)
             if dt.year < 1970 or dt.year > 2038:  # Plausibility check
                 raise ValueError("Timestamp out of range, likely not in seconds.")
@@ -15,8 +14,8 @@ def convert_unix_to_datetime(unix_time):
         except (OSError, ValueError):
             pass
 
-        # Try to convert assuming the timestamp is in milliseconds
         try:
+            # Try to convert assuming the timestamp is in milliseconds
             dt = datetime.utcfromtimestamp(unix_time / 1000.0)
             return dt.strftime('%Y-%m-%d %H:%M:%S')
         except (OSError, ValueError):
@@ -27,8 +26,7 @@ def get_options_chain(ticker, expiration_date, api_key, request_counter):
     url = f"https://api.marketdata.app/v1/options/chain/{ticker}"
     params = {
         'expiration': expiration_date,
-        #'feed': 'cached',   # Use cached data to minimize credit consumption
-        'range': 'itm'      # Filter for in-the-money options
+        'range': 'itm'  # Filter for in-the-money options
     }
     headers = {
         'Authorization': f'Bearer {api_key}'
@@ -38,60 +36,51 @@ def get_options_chain(ticker, expiration_date, api_key, request_counter):
     request_counter['count'] += 1
     print(f"Fetching data for {ticker} with expiration {expiration_date}: Status Code {response.status_code}")
 
-    if response.status_code == 200:
-        data = response.json()
-        if data:
-            #print("Data Returned:", data) 
-            return pd.DataFrame(data), request_counter
-        else:
-            print(f"No data returned for {ticker} with expiration {params['expiration']}")
+    if response.status_code in [200, 203]:
+        try:
+            data = response.json()
+            print(f"Response JSON for {ticker} with expiration {expiration_date}: {data}")
+        except ValueError:
+            print(f"Failed to parse JSON for {ticker} with expiration {expiration_date}")
+            return pd.DataFrame(), request_counter
 
-    if response.status_code == 203:
-        data = response.json()
-        if data:
-            #print("Data Returned:", data) 
-            return pd.DataFrame(data), request_counter
-        else:
-            print(f"No data returned for {ticker} with expiration {params['expiration']}")
+        if not data:
+            print(f"No data in response for {ticker} with expiration {expiration_date}")
+            return pd.DataFrame(), request_counter
 
-    # Print the response content for inspection
+        options_data = []
+        for option in data:
+            if isinstance(option, dict):
+                options_data.append({
+                    "Updated Date": convert_unix_to_datetime(option.get('updated_at')),
+                    "Expiration Date": convert_unix_to_datetime(option.get('expiration')),
+                    "Ticker": option.get('ticker'),
+                    "Strike": option.get('strike'),
+                    "Last": option.get('last'),
+                    "Theor.": option.get('theoretical'),
+                    "IV": option.get('iv'),
+                    "Delta": option.get('delta'),
+                    "Gamma": option.get('gamma'),
+                    "Theta": option.get('theta'),
+                    "Vega": option.get('vega'),
+                    "Rho": option.get('rho'),
+                    "Volume": option.get('volume'),
+                    "Open Int": option.get('open_interest'),
+                    "Vol/OI": option.get('volume') / option.get('open_interest') if option.get('open_interest') else None,
+                    "Type": option.get('type'),
+                    "Last Trade": option.get('last_trade_date'),
+                    "Avg IV": option.get('average_iv')
+                })
+            else:
+                print(f"Unexpected data format: {option}")
+        return pd.DataFrame(options_data), request_counter
+
     print(f"Response content for {ticker} with expiration {expiration_date}: {response.content}")
 
-    data = response.json()
-
-    if not data.get('data'):
-        print(f"No data returned for {ticker} with expiration {expiration_date}")
-        return pd.DataFrame(), request_counter  # Return an empty DataFrame if no data is returned
-
-    options_data = []
-    for option in data['data']:
-        options_data.append({
-            "Updated Date": convert_unix_to_datetime(option.get('updated_at')),
-            "Expiration Date": convert_unix_to_datetime(option.get('expiration')),
-            "Ticker": option.get('ticker'),
-            "Strike": option.get('strike'),
-            "Last": option.get('last'),
-            "Theor.": option.get('theoretical'),
-            "IV": option.get('iv'),
-            "Delta": option.get('delta'),
-            "Gamma": option.get('gamma'),
-            "Theta": option.get('theta'),
-            "Vega": option.get('vega'),
-            "Rho": option.get('rho'),
-            "Volume": option.get('volume'),
-            "Open Int": option.get('open_interest'),
-            "Vol/OI": option.get('volume') / option.get('open_interest') if option.get('open_interest') else None,
-            "Type": option.get('type'),
-            "Last Trade": option.get('last_trade_date'),
-            "Avg IV": option.get('average_iv')
-        })
-
-    return pd.DataFrame(options_data), request_counter
+    return pd.DataFrame(), request_counter
 
 # List of tickers and expiration dates
-#tickers = ['spy', 'qqq', 'iwm', 'gld', 'appl', 'meta', 'msft', 'enph']
 tickers = ['spy']
-#expiration_dates = ['2024-06-14', '2024-06-21', '2024-06-28']
 expiration_dates = ['2024-06-21']
 
 # Your MarketData API key
