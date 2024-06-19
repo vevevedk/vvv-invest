@@ -3,7 +3,7 @@
 
 # ignore csv files located in the csv folder and all csv files
 csv/
-.csv
+*.csv
 
 # ignore tokesn folder
 tokens/
