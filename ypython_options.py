@@ -4,7 +4,9 @@ from datetime import datetime, timedelta
 
 # Define the list of tickers, including VIX
 tickers = ["SPY", "QQQ", "IWM", "GLD", "ENPH", "PLTR", "NVDA", "MSFT", 
-           "META", "AMD", "SOFI", "GOOGL", "AAPL", "TSLA", "AMZN", "$VIX"]
+           "META", "AMD", "SOFI", "GOOGL", "AAPL", "TSLA", "AMZN", "^VIX"]
+
+#tickers = ["SPY", "^VIX"]
 
 # Function to get the next three Fridays
 def get_next_fridays(num_weeks=3):
@@ -43,7 +45,7 @@ for ticker in tickers:
     all_expirations = stock.options
 
     # Determine the relevant expiration dates based on the ticker
-    if ticker == "VIX":
+    if ticker == "^VIX":
         relevant_expirations = [exp for exp in all_expirations if exp in wednesdays]
     else:
         relevant_expirations = [exp for exp in all_expirations if exp in fridays]
@@ -90,3 +92,4 @@ options_data = options_data[[
 
 # Save the data to a CSV file
 options_data.to_csv('yfinance_options_data.csv', index=False)
+print("data saved to csv")
