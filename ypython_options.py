@@ -3,8 +3,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 # Define the list of tickers, including VIX
-tickers = ["SPY", "QQQ", "IWM", "GLD", "ENPH", "PLTR", "NVDA", "MSFT", 
-           "META", "AMD", "SOFI", "GOOGL", "AAPL", "TSLA", "AMZN", "^VIX"]
+tickers = ["^SPX","SPY", "QQQ", "IWM", "GLD", "ENPH", "PLTR", "NVDA", "MSFT", 
+           "META", "AMD", "SOFI", "GOOGL", "AAPL", "TSLA", "AMZN", "^VIX", "ADBE","NIO", "XPEV", "ASML", "TSM","PPSI", "SE", "PI", "HOOD", "LCID","CHPT", "EVGO"]
 
 #tickers = ["SPY", "^VIX"]
 
