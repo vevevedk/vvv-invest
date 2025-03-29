@@ -3,8 +3,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 # Define the list of tickers, including VIX
-tickers = ["SPY", "QQQ", "IWM", "GLD", "ENPH", "PLTR", "NVDA", "MSFT", 
-           "META", "AMD", "SOFI", "GOOGL", "AAPL", "TSLA", "AMZN", "^VIX"]
+tickers = ["SPY", "QQQ", "IWM", "GLD", "ENPH", "PLTR", "NVDA", "MSFT","KWEB",
+           "META", "AMD", "SOFI", "GOOGL", "AAPL", "TSLA", "AMZN", "^VIX", "ADBE"]
 
 #tickers = ["SPY", "^VIX"]
 
@@ -86,7 +86,7 @@ for col in required_columns:
 
 # Select and reorder the columns to match the desired format
 options_data = options_data[[
-    'Expiration Date', 'Ticker', 'Strike', 'Last', 'IV', 'Delta', 'Gamma', 'Theta', 'Vega', 'Rho', 
+    'Expiration Date', 'Ticker', 'Strike', 'Last', 'IV', 'Delta', 'Gamma', 'Theta', 'Vega', 'Rho',
     'Volume', 'Open Int', 'Type', 'Updated Date'
 ]]
 
