@@ -67,6 +67,40 @@
    GRANT ALL PRIVILEGES ON DATABASE trading_data TO deployer;
    ```
 
+## Database Configuration
+
+The application uses a Digital Ocean managed PostgreSQL database:
+
+### Connection Details
+- Host: vvv-trading-db-do-user-21110609-0.i.db.ondigitalocean.com
+- Port: 25060
+- Database: defaultdb
+- Username: doadmin
+- SSL Mode: require
+
+### Security Notes
+- Never commit the .env file containing the database password
+- The database cluster is open to all incoming connections by default
+- Consider using the "Secure this database cluster by restricting access" option in DO
+- Download and keep the CA certificate in a secure location
+
+### Connection String Format
+```python
+DATABASE_URL = "postgresql://doadmin:${DB_PASSWORD}@vvv-trading-db-do-user-21110609-0.i.db.ondigitalocean.com:25060/defaultdb?sslmode=require"
+```
+
+### Important Specifications
+- Primary Node: 1 vCPU / 1GB RAM / 10 GiB SSD
+- Connection Limit: 22 concurrent connections
+- PostgreSQL Version: 17
+- VPC Network: default-ams3 (10.110.0.0/20)
+- Location: Amsterdam (AMS3)
+
+### Monitoring
+- Monitor connection count (limit: 22)
+- Monitor storage usage (limit: 10 GiB)
+- Set up alerts for 80% usage thresholds
+
 ## Monitoring
 
 1. **Log Files**

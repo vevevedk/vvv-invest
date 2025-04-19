@@ -10,7 +10,23 @@ from dotenv import load_dotenv
 
 # Add parent directory to path to import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import API_KEY, DB_CONFIG
+from config import API_KEY
+
+# Load environment variables
+load_dotenv()
+
+# Database configuration
+DB_CONFIG = {
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'host': os.getenv('DB_HOST'),
+    'port': os.getenv('DB_PORT'),
+    'database': os.getenv('DB_NAME'),
+    'sslmode': os.getenv('DB_SSL_MODE', 'require')
+}
+
+# Create database URL
+DATABASE_URL = f"postgresql://{DB_CONFIG['user']}:{DB_CONFIG['password']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}?sslmode={DB_CONFIG['sslmode']}"
 
 # Configure logging
 logging.basicConfig(
@@ -95,9 +111,7 @@ def main():
     
     # Initialize database connection
     try:
-        engine = create_engine(
-            f"postgresql://{DB_CONFIG['user']}:{DB_CONFIG['password']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
-        )
+        engine = create_engine(DATABASE_URL)
     except Exception as e:
         logger.error(f"Database connection error: {str(e)}")
         return
