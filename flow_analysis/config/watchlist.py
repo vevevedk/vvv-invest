@@ -3,7 +3,7 @@ Watchlist Configuration
 """
 
 # Target Symbols
-SYMBOLS = ["SPY", "QQQ"]
+SYMBOLS = ["SPY", "QQQ", "GLD"]
 
 # Dark Pool Trade Thresholds
 BLOCK_SIZE_THRESHOLD = 10000  # minimum shares for block trade

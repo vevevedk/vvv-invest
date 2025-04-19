@@ -26,7 +26,7 @@ from config.api_config import (
     DEFAULT_HEADERS, REQUEST_TIMEOUT, REQUEST_RATE_LIMIT
 )
 from config.db_config import DB_CONFIG, SCHEMA_NAME, TABLE_NAME
-from config.watchlist import MARKET_OPEN, MARKET_CLOSE
+from config.watchlist import MARKET_OPEN, MARKET_CLOSE, SYMBOLS
 
 # Set up logging
 logging.basicConfig(
@@ -111,15 +111,20 @@ class DarkPoolCollector:
             trades['symbol'] = trades['ticker']
             trades.drop('ticker', axis=1, inplace=True)
         
+        # Filter by watchlist symbols
+        initial_count = len(trades)
+        trades = trades[trades['symbol'].isin(SYMBOLS)]
+        logger.info(f"Filtered to {len(trades)} trades for watchlist symbols: {SYMBOLS}")
+        
         # Add collection timestamp
         trades['collection_time'] = datetime.now(self.eastern)
         
         # Remove any trades we've already collected
         if 'tracking_id' in trades.columns:
-            initial_count = len(trades)
+            before_dedup = len(trades)
             trades = trades[~trades['tracking_id'].isin(self.collected_tracking_ids)]
             self.collected_tracking_ids.update(trades['tracking_id'].tolist())
-            logger.info(f"Removed {initial_count - len(trades)} duplicate trades")
+            logger.info(f"Removed {before_dedup - len(trades)} duplicate trades")
             
         logger.info(f"Returning {len(trades)} unique trades for processing")
         return trades
