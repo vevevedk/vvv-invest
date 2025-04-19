@@ -7,6 +7,7 @@ import os
 import sys
 import time
 import logging
+from logging.handlers import RotatingFileHandler
 from datetime import datetime, timedelta
 import pandas as pd
 from pathlib import Path
@@ -28,10 +29,49 @@ from config.api_config import (
 from config.db_config import DB_CONFIG, SCHEMA_NAME, TABLE_NAME
 from config.watchlist import MARKET_OPEN, MARKET_CLOSE, SYMBOLS
 
+class DatabaseLogHandler(logging.Handler):
+    def __init__(self, conn):
+        super().__init__()
+        self.conn = conn
+
+    def emit(self, record):
+        if self.conn.closed:
+            return
+        
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO trading.collector_logs (timestamp, level, message)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (
+                        datetime.fromtimestamp(record.created).astimezone(),
+                        record.levelname,
+                        self.format(record)
+                    )
+                )
+                self.conn.commit()
+        except Exception:
+            pass  # Avoid recursion if logging fails
+
 # Set up logging
+log_dir = Path("logs")
+log_dir.mkdir(exist_ok=True)
+log_file = log_dir / "darkpool_collector.log"
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        # Rotate file logs: 5MB per file, keep 5 backup files
+        RotatingFileHandler(
+            log_file,
+            maxBytes=5*1024*1024,  # 5MB
+            backupCount=5
+        ),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -50,6 +90,10 @@ class DarkPoolCollector:
         # Initialize database connection
         self.db_conn = None
         self.connect_db()
+        
+        # Add database log handler
+        db_handler = DatabaseLogHandler(self.db_conn)
+        logger.addHandler(db_handler)
         
     def connect_db(self):
         """Establish database connection"""
@@ -234,39 +278,73 @@ class DarkPoolCollector:
         
         # Check if it's a weekday
         if current_time.weekday() >= 5:  # 5 is Saturday, 6 is Sunday
+            logger.info(f"Market closed - weekend ({current_time.strftime('%A')})")
             return False
             
         # Check if it's within market hours
         market_open = current_time.replace(
-            hour=MARKET_OPEN.hour,
-            minute=MARKET_OPEN.minute,
+            hour=int(MARKET_OPEN.split(':')[0]),
+            minute=int(MARKET_OPEN.split(':')[1]),
             second=0,
             microsecond=0
         )
         market_close = current_time.replace(
-            hour=MARKET_CLOSE.hour,
-            minute=MARKET_CLOSE.minute,
+            hour=int(MARKET_CLOSE.split(':')[0]),
+            minute=int(MARKET_CLOSE.split(':')[1]),
             second=0,
             microsecond=0
         )
         
-        return market_open <= current_time <= market_close
+        is_open = market_open <= current_time <= market_close
+        if not is_open:
+            next_open = market_open
+            if current_time > market_close:
+                next_open = (market_open + timedelta(days=1))
+            while next_open.weekday() >= 5:  # Skip weekends
+                next_open += timedelta(days=1)
+            logger.info(f"Market closed - Next open: {next_open.strftime('%Y-%m-%d %H:%M')} ET")
+        return is_open
+
+    def get_next_market_open(self) -> datetime:
+        """Get the next market open time"""
+        current_time = datetime.now(self.eastern)
         
-    def run(self, collection_interval: int = 300):  # 5 minutes in seconds
-        """Run the collector continuously during market hours"""
-        logger.info("Starting dark pool trade collector...")
+        # Start with current day's market open
+        next_open = current_time.replace(
+            hour=int(MARKET_OPEN.split(':')[0]),
+            minute=int(MARKET_OPEN.split(':')[1]),
+            second=0,
+            microsecond=0
+        )
         
-        while True:
-            logger.info("Collecting trades...")
-            trades = self.collect_trades()
-            if not trades.empty:
-                self.save_trades_to_db(trades)
-            else:
-                logger.warning("No new trades collected")
-                
-            # Wait for the next collection interval
-            time.sleep(collection_interval)
-            
+        # If we're past today's market open, move to next business day
+        if current_time >= next_open:
+            next_open += timedelta(days=1)
+        
+        # Skip weekends
+        while next_open.weekday() >= 5:  # 5 is Saturday, 6 is Sunday
+            next_open += timedelta(days=1)
+        
+        return next_open
+
+    def run(self):
+        """Run one collection cycle"""
+        if not self.is_market_open():
+            return
+        
+        logger.info("Market open - collecting trades...")
+        start_time = time.time()
+        
+        trades = self.collect_trades()
+        if not trades.empty:
+            self.save_trades_to_db(trades)
+            logger.info(f"Collected and saved {len(trades)} trades for symbols: {trades['symbol'].unique().tolist()}")
+        else:
+            logger.info("No new trades collected")
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        logger.info(f"Collection cycle completed in {duration_ms}ms")
+
     def __del__(self):
         """Clean up database connection"""
         if self.db_conn and not self.db_conn.closed:
@@ -275,7 +353,7 @@ class DarkPoolCollector:
 def main():
     # Add argument parsing
     parser = argparse.ArgumentParser(description='Dark Pool Trade Collector')
-    parser.add_argument('--historical', action='store_true', help='Fetch data from last trading day (April 17th)')
+    parser.add_argument('--historical', action='store_true', help='Fetch data from last trading day')
     args = parser.parse_args()
 
     collector = DarkPoolCollector()
@@ -302,7 +380,7 @@ def main():
         else:
             logger.warning("No historical trades collected")
     else:
-        # Normal continuous collection
+        # Single collection cycle
         collector.run()
 
 if __name__ == "__main__":
