@@ -106,6 +106,11 @@ class DarkPoolCollector:
         trades = pd.DataFrame(trades_data)
         logger.info(f"DataFrame created with columns: {trades.columns.tolist()}")
         
+        # Map ticker to symbol
+        if 'ticker' in trades.columns:
+            trades['symbol'] = trades['ticker']
+            trades.drop('ticker', axis=1, inplace=True)
+        
         # Add collection timestamp
         trades['collection_time'] = datetime.now(self.eastern)
         
