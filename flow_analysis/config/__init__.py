@@ -1,3 +1,4 @@
+"""Configuration module for flow analysis."""
 import os
 from dotenv import load_dotenv
 
