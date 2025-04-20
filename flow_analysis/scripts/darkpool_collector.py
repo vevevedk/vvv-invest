@@ -36,6 +36,7 @@ class DatabaseLogHandler(logging.Handler):
 
     def emit(self, record):
         if self.conn.closed:
+            print(f"Warning: Database connection is closed, reconnecting...")
             return
         
         try:
@@ -52,8 +53,9 @@ class DatabaseLogHandler(logging.Handler):
                     )
                 )
                 self.conn.commit()
-        except Exception:
-            pass  # Avoid recursion if logging fails
+        except Exception as e:
+            print(f"Error writing to database log: {str(e)}")  # Print the actual error
+            pass  # Still avoid recursion
 
 # Set up logging
 log_dir = Path("logs")

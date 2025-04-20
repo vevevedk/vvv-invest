@@ -1,7 +1,8 @@
 import os
 import sys
 import logging
-from datetime import datetime, time
+import argparse
+from datetime import datetime, time, timedelta
 import pytz
 import requests
 import pandas as pd
@@ -10,7 +11,7 @@ from dotenv import load_dotenv
 
 # Add parent directory to path to import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import API_KEY
+from config.api_config import UW_API_TOKEN, UW_BASE_URL, DARKPOOL_TICKER_ENDPOINT, DEFAULT_HEADERS
 
 # Load environment variables
 load_dotenv()
@@ -66,22 +67,27 @@ def is_market_open():
 
 def fetch_trades(symbol, date_str, limit=200):
     """Fetch dark pool trades from the API."""
-    url = f"https://api.unusualwhales.com/api/darkpool/{symbol}"
-    headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "Content-Type": "application/json"
-    }
+    url = f"{UW_BASE_URL}{DARKPOOL_TICKER_ENDPOINT}/{symbol}"
+    
     params = {
         "date": date_str,
         "limit": limit
     }
     
     try:
-        response = requests.get(url, headers=headers, params=params)
+        logger.info(f"Making request to: {url}")
+        logger.info(f"With params: {params}")
+        logger.info(f"Headers: {DEFAULT_HEADERS}")
+        
+        response = requests.get(url, headers=DEFAULT_HEADERS, params=params)
+        logger.info(f"Response status code: {response.status_code}")
+        logger.info(f"Response content: {response.text[:500]}")  # Log first 500 chars of response
+        
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         logger.error(f"Error fetching trades for {symbol}: {str(e)}")
+        logger.error(f"Full error: {str(e.__class__.__name__)}: {str(e)}")
         return None
 
 def save_to_database(df, engine):
@@ -103,9 +109,34 @@ def save_to_database(df, engine):
     except Exception as e:
         logger.error(f"Error saving to database: {str(e)}")
 
+def get_last_trading_day():
+    """Get the most recent trading day."""
+    eastern = pytz.timezone('US/Eastern')
+    now = datetime.now(eastern)
+    
+    # Special case for Easter weekend 2025
+    if now.strftime('%Y-%m-%d') in ['2025-04-18', '2025-04-19', '2025-04-20']:
+        return '2025-04-17'  # Thursday before Good Friday
+    
+    # Regular trading day logic
+    if now.weekday() == 0:  # Monday
+        return (now - timedelta(days=3)).strftime('%Y-%m-%d')  # Friday
+    elif now.weekday() >= 1 and now.weekday() <= 5:
+        return (now - timedelta(days=1)).strftime('%Y-%m-%d')
+    else:  # Weekend
+        if now.weekday() == 6:  # Saturday
+            return (now - timedelta(days=1)).strftime('%Y-%m-%d')  # Friday
+        else:  # Sunday
+            return (now - timedelta(days=2)).strftime('%Y-%m-%d')  # Friday
+
 def main():
-    # Check if market is open
-    if not is_market_open():
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='Collect dark pool trades data')
+    parser.add_argument('--historical', action='store_true', help='Fetch data from last trading day')
+    args = parser.parse_args()
+    
+    # If historical flag is not set, check if market is open
+    if not args.historical and not is_market_open():
         logger.info("Market is closed, skipping collection")
         return
     
@@ -116,15 +147,19 @@ def main():
         logger.error(f"Database connection error: {str(e)}")
         return
     
-    # Get current date in YYYY-MM-DD format
-    current_date = datetime.now().strftime('%Y-%m-%d')
+    # Get date to fetch
+    if args.historical:
+        fetch_date = get_last_trading_day()
+        logger.info(f"Fetching historical data for {fetch_date}")
+    else:
+        fetch_date = datetime.now().strftime('%Y-%m-%d')
     
     # Symbols to track
     symbols = ['SPY', 'QQQ']
     
     for symbol in symbols:
-        logger.info(f"Fetching trades for {symbol} on {current_date}")
-        trades = fetch_trades(symbol, current_date)
+        logger.info(f"Fetching trades for {symbol} on {fetch_date}")
+        trades = fetch_trades(symbol, fetch_date)
         
         if trades and isinstance(trades, list):
             df = pd.DataFrame(trades)
