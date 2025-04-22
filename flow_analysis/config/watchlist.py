@@ -3,7 +3,26 @@ Watchlist Configuration
 """
 
 # Target Symbols
-SYMBOLS = ["SPY", "QQQ", "GLD"]
+SYMBOLS = [
+    # Core Market ETFs
+    "SPY",  # S&P 500 ETF
+    "QQQ",  # Nasdaq 100 ETF
+    
+    # Safe Haven Assets
+    "GLD",  # Gold ETF
+    "SLV",  # Silver ETF
+    "TLT",  # 20+ Year Treasury ETF
+    "FXF",  # Swiss Franc Trust
+    
+    # Sector ETFs
+    "XLF",  # Financial Sector ETF
+    "SMH",  # Semiconductor ETF
+    "XLE",  # Energy Sector ETF
+    
+    # International ETFs
+    "EZU",  # Eurozone ETF
+    "EFA"   # Developed Markets ex-US
+]
 
 # Dark Pool Trade Thresholds
 BLOCK_SIZE_THRESHOLD = 10000  # minimum shares for block trade
