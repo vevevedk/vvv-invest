@@ -26,4 +26,54 @@ CREATE INDEX idx_darkpool_trades_size ON trading.darkpool_trades(size);
 CREATE INDEX idx_darkpool_trades_price ON trading.darkpool_trades(price);
 
 -- Add comment to table
-COMMENT ON TABLE trading.darkpool_trades IS 'Stores dark pool trade data collected from Unusual Whales API'; 
+COMMENT ON TABLE trading.darkpool_trades IS 'Stores dark pool trade data collected from Unusual Whales API';
+
+-- Options Flow Tables
+
+-- Main options flow table
+CREATE TABLE IF NOT EXISTS trading.options_flow (
+    id SERIAL PRIMARY KEY,
+    symbol VARCHAR(10),
+    strike DECIMAL,
+    expiry DATE,
+    flow_type VARCHAR(20),
+    premium DECIMAL,
+    contract_size INTEGER,
+    iv_rank DECIMAL,
+    collected_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Price levels and market metrics
+CREATE TABLE IF NOT EXISTS trading.market_metrics (
+    id SERIAL PRIMARY KEY,
+    symbol VARCHAR(10),
+    metric_type VARCHAR(50),
+    value DECIMAL,
+    timestamp TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for options flow
+CREATE INDEX IF NOT EXISTS idx_options_flow_symbol 
+ON trading.options_flow(symbol);
+
+CREATE INDEX IF NOT EXISTS idx_options_flow_timestamp 
+ON trading.options_flow(collected_at);
+
+CREATE INDEX IF NOT EXISTS idx_options_flow_lookup 
+ON trading.options_flow(symbol, expiry, collected_at);
+
+-- Indexes for market metrics
+CREATE INDEX IF NOT EXISTS idx_market_metrics_lookup 
+ON trading.market_metrics(symbol, metric_type, timestamp);
+
+-- Comments
+COMMENT ON TABLE trading.options_flow IS 'Stores options flow data from Unusual Whales API';
+COMMENT ON TABLE trading.market_metrics IS 'Stores price levels, IV ranks, and other market metrics';
+
+-- Permissions
+GRANT SELECT, INSERT ON trading.options_flow TO collector;
+GRANT SELECT, INSERT ON trading.market_metrics TO collector;
+GRANT USAGE ON SEQUENCE trading.options_flow_id_seq TO collector;
+GRANT USAGE ON SEQUENCE trading.market_metrics_id_seq TO collector; 

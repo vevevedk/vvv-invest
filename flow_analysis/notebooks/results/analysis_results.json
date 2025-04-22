@@ -1,0 +1,19 @@
+{
+  "total_trades": 100,
+  "total_volume": "422450",
+  "total_premium": 23109791.4131,
+  "avg_trade_size": 4224.5,
+  "avg_price": 180.49485700000002,
+  "price_range": {
+    "min": 3.47,
+    "max": 943.5,
+    "range": 940.03
+  },
+  "hourly_stats": "      size                      premium price               \n     count     sum    mean          sum   min    max    mean\nhour                                                        \n23     100  422450  4224.5  23109791.41  3.47  943.5  180.49",
+  "market_center_stats": "               size                      premium\n              count     sum    mean          sum\nmarket_center                                   \nL               100  422450  4224.5  23109791.41",
+  "price_impact": {
+    "mean": 0.0017430131371614526,
+    "median": 0.0002038813237241625,
+    "std": 0.006333338980882005
+  }
+}
