@@ -10,6 +10,11 @@ UW_BASE_URL = "https://api.unusualwhales.com/api"
 DARKPOOL_RECENT_ENDPOINT = "/darkpool/recent"
 DARKPOOL_TICKER_ENDPOINT = "/darkpool"  # Will append /{symbol} in the code
 
+# Options Flow Endpoints
+EXPIRY_BREAKDOWN_ENDPOINT = "/stock/{ticker}/expiry-breakdown"  # Get all expirations for a ticker
+OPTION_CONTRACTS_ENDPOINT = "/stock/{ticker}/option-contracts"  # Get all contracts for a ticker
+OPTION_FLOW_ENDPOINT = "/option-contract/{id}/flow"  # Get flow data for a specific contract
+
 # Request Configuration
 DEFAULT_HEADERS = {
     "Accept": "application/json, text/plain",
