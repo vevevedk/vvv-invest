@@ -144,9 +144,9 @@ class OptionsFlowCollector:
         try:
             with self.db_conn.cursor() as cur:
                 cur.execute("SELECT 1")
-                cur.execute("SELECT has_table_privilege('collector', 'trading.options_flow', 'INSERT')")
+                cur.execute(f"SELECT has_table_privilege(current_user, 'trading.options_flow', 'INSERT')")
                 if not cur.fetchone()[0]:
-                    raise PermissionError("Collector user does not have INSERT permission on trading.options_flow")
+                    raise PermissionError(f"Current database user does not have INSERT permission on trading.options_flow")
         except psycopg2.Error as e:
             logger.error(f"Database connection validation failed: {str(e)}")
             raise

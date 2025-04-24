@@ -118,12 +118,17 @@ class DarkPoolCollector:
         """Make an API request with retry logic"""
         try:
             self._rate_limit()
+            logger.info(f"Making request to endpoint: {endpoint}")
+            logger.info(f"Request headers: {self.headers}")
+            logger.info(f"Request params: {params}")
             response = requests.get(
                 endpoint,
                 headers=self.headers,
                 params=params,
                 timeout=REQUEST_TIMEOUT
             )
+            logger.info(f"Response status code: {response.status_code}")
+            logger.info(f"Response URL: {response.url}")
             response.raise_for_status()
             return response.json()
         except Exception as e:
