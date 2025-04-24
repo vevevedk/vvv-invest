@@ -21,12 +21,12 @@ from collections import deque
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from flow_analysis.config.watchlist import SYMBOLS, MARKET_OPEN, MARKET_CLOSE
-from flow_analysis.config.api_config import (
+from config.watchlist import SYMBOLS, MARKET_OPEN, MARKET_CLOSE
+from config.api_config import (
     UW_BASE_URL, DEFAULT_HEADERS, REQUEST_TIMEOUT, REQUEST_RATE_LIMIT,
     EXPIRY_BREAKDOWN_ENDPOINT, OPTION_CONTRACTS_ENDPOINT, OPTION_FLOW_ENDPOINT
 )
-from flow_analysis.db.connection import get_db_connection
+from db.connection import get_db_connection
 
 # Load environment variables
 load_dotenv()
