@@ -214,6 +214,9 @@ class DarkPoolCollector:
                 logger.info("Database connection closed, reconnecting...")
                 self.connect_db()
                 
+            # Start a fresh transaction
+            self.db_conn.rollback()  # Clear any failed transaction state
+                
             with self.db_conn.cursor() as cur:
                 # Prepare data for insertion
                 records = trades.to_dict('records')
@@ -262,20 +265,29 @@ class DarkPoolCollector:
                     logger.error("No valid values prepared for insertion")
                     return
                 
-                logger.info(f"Executing insert query with {len(values)} values")
-                # Execute the insert
-                execute_values(cur, insert_query, values)
-                self.db_conn.commit()
-                
-                # Verify the insertion
-                cur.execute(f"SELECT COUNT(*) FROM {SCHEMA_NAME}.{TABLE_NAME}")
-                total_count = cur.fetchone()[0]
-                logger.info(f"Total trades in database after insertion: {total_count}")
+                try:
+                    logger.info(f"Executing insert query with {len(values)} values")
+                    # Execute the insert
+                    execute_values(cur, insert_query, values)
+                    self.db_conn.commit()
+                    
+                    # Verify the insertion
+                    cur.execute(f"SELECT COUNT(*) FROM {SCHEMA_NAME}.{TABLE_NAME}")
+                    total_count = cur.fetchone()[0]
+                    logger.info(f"Total trades in database after insertion: {total_count}")
+                except psycopg2.Error as e:
+                    logger.error(f"Database error during insertion: {str(e)}")
+                    self.db_conn.rollback()
+                    raise
                 
         except Exception as e:
             logger.error(f"Error saving trades to database: {str(e)}")
-            logger.error(f"Database error details: {str(e)}")
-            self.db_conn.rollback()
+            if not isinstance(e, psycopg2.Error):  # Only log details if not already logged
+                logger.error(f"Error details: {str(e)}")
+            try:
+                self.db_conn.rollback()
+            except Exception:
+                pass  # Connection might be closed
             raise
             
     def is_market_open(self) -> bool:
