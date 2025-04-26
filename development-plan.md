@@ -19,11 +19,13 @@ Implement a Python-based system to collect and analyze dark pool trades and news
      - Integrates with existing database
      - Low API usage footprint
 
-   - Options Flow Collector (Paused - Future Enhancement)
-     - Currently hitting 15K daily API limit
-     - Will require Advanced tier ($350/mo) for websocket
-     - Planned for implementation in 3-6 months
-     - Dependent on trading performance metrics
+   - Options Flow Collector (New Priority)
+     - Focused on SPY/QQQ market direction signals
+     - Collects both calls and puts for sentiment analysis
+     - Filters by premium size to reduce API usage
+     - Integrates with dark pool analysis
+     - Runs every 5 minutes during market hours
+     - Stores in PostgreSQL for correlation analysis
 
 2. **Database** (PostgreSQL)
    - Stores collected dark pool trades (✓ Implemented)
@@ -88,12 +90,30 @@ Implement a Python-based system to collect and analyze dark pool trades and news
    - [ ] Implement sentiment analysis
    - [ ] Set up alert system
 
-### Phase 3: Options Flow Integration (Future - 3-6 months)
+### Phase 3: Options Flow Integration (Current Priority)
 1. **Prerequisites**
-   - [ ] Achieve consistent trading returns
-   - [ ] Cost-benefit analysis of Advanced tier
-   - [ ] Evaluate websocket implementation
-   - [ ] Plan for increased data volume
+   - [x] Define focused collection strategy
+   - [ ] Implement initial collector with premium filtering
+   - [ ] Test API usage within free tier limits
+   - [ ] Integrate with dark pool analysis
+
+2. **Data Integration**
+   - [ ] Combine options flow with dark pool signals
+   - [ ] Create correlation analysis tools
+   - [ ] Implement real-time sentiment tracking
+   - [ ] Set up market direction indicators
+
+3. **Analysis Enhancement**
+   - [ ] Create options-based sentiment indicators
+   - [ ] Develop combined signal generation
+   - [ ] Build visualization dashboards
+   - [ ] Implement alert system for strong signals
+
+4. **Performance Optimization**
+   - [ ] Monitor and optimize API usage
+   - [ ] Implement efficient data storage
+   - [ ] Create data retention policies
+   - [ ] Set up performance monitoring
 
 ### Phase 4: Digital Ocean Setup
 1. **Infrastructure**
