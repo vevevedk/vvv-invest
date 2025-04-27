@@ -100,6 +100,38 @@ Returns all expirations for a given ticker on a specific trading day.
 }
 ```
 
+### 4. News Headlines
+`GET https://api.unusualwhales.com/api/news/headlines`
+
+Returns the latest news headlines for financial markets.
+
+**Parameters:**
+- `limit` (optional): Number of items to return (default: 50, min: 1, max: 100)
+- `major_only` (optional): When true, only returns major/significant news (default: false)
+- `page` (optional): Page number for pagination (starts at 0)
+- `search_term` (optional): Filter news headlines by content
+- `sources` (optional): Comma-separated list of news sources to filter by (e.g., 'Reuters,Bloomberg')
+
+**Response Example:**
+```json
+{
+  "data": [
+    {
+      "created_at": "2024-04-27T19:30:00Z",
+      "headline": "Example News Headline",
+      "is_major": true,
+      "meta": {
+        "additional_info": "value"
+      },
+      "sentiment": "positive",
+      "source": "Reuters",
+      "tags": ["earnings", "tech"],
+      "tickers": ["AAPL", "MSFT"]
+    }
+  ]
+}
+```
+
 ## Implementation Strategy for Options Flow Collector
 
 For our options flow collector, we should:
