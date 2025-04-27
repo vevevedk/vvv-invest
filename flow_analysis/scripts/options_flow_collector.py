@@ -14,6 +14,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 import requests
 import argparse
+import json
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
@@ -125,23 +126,67 @@ class OptionsFlowCollector:
         if not data or "data" not in data:
             return pd.DataFrame()
             
+        # Log raw data for debugging
+        logger.info(f"Raw API response structure: {json.dumps(data['data'][0] if data['data'] else {}, indent=2)}")
+        
         # Convert to DataFrame and process
         df = pd.DataFrame(data["data"])
         if df.empty:
             return df
             
+        # Log available columns
+        logger.info(f"Available columns in API response: {df.columns.tolist()}")
+        
         # Add calculated fields
         df['timestamp'] = pd.to_datetime(df['executed_at'])
+        
+        # Convert premium to numeric before comparison
+        df['premium'] = pd.to_numeric(df['premium'], errors='coerce')
         df['is_significant'] = df['premium'] >= MIN_PREMIUM
         
-        # Select and rename columns
-        df = df[[
+        # Map API response columns to our expected columns
+        column_mapping = {
+            'ticker': 'symbol',
+            'size': 'contract_size',
+            'strike_price': 'strike',
+            'option_type': 'option_type',
+            'implied_volatility': 'implied_volatility',
+            'delta': 'delta',
+            'underlying_price': 'underlying_price',
+            'expiration_date': 'expiry'
+        }
+        
+        # Create missing columns with None/NaN if they don't exist
+        for new_col in ['symbol', 'contract_size', 'strike', 'option_type', 
+                       'implied_volatility', 'delta', 'underlying_price', 'expiry']:
+            if new_col not in df.columns:
+                df[new_col] = None
+        
+        # Map columns from API response
+        for api_col, our_col in column_mapping.items():
+            if api_col in df.columns:
+                df[our_col] = df[api_col]
+        
+        # Ensure we have all required columns
+        required_columns = [
             'symbol', 'timestamp', 'expiry', 'strike', 'option_type',
             'premium', 'contract_size', 'implied_volatility', 'delta',
             'underlying_price', 'is_significant'
-        ]]
+        ]
         
-        return df
+        # Log actual columns for debugging
+        logger.info(f"Final columns before selection: {df.columns.tolist()}")
+        
+        # Select only the columns we need, filling missing ones with None
+        result_df = pd.DataFrame(columns=required_columns)
+        for col in required_columns:
+            if col in df.columns:
+                result_df[col] = df[col]
+            else:
+                logger.warning(f"Missing column {col} in API response")
+                result_df[col] = None
+        
+        return result_df
         
     def save_flow_signals(self, df: pd.DataFrame) -> None:
         """Save flow signals to database"""
@@ -333,4 +378,4 @@ def main():
         collector.run()
 
 if __name__ == "__main__":
-    main() 
+    main()
