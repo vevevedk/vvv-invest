@@ -15,6 +15,9 @@ EXPIRY_BREAKDOWN_ENDPOINT = "/stock/{ticker}/expiry-breakdown"  # Get all expira
 OPTION_CONTRACTS_ENDPOINT = "/stock/{ticker}/option-contracts"  # Get all contracts for a ticker
 OPTION_FLOW_ENDPOINT = "/option-contract/{id}/flow"  # Get flow data for a specific contract
 
+# News Endpoints
+NEWS_HEADLINES_ENDPOINT = "/news/headlines"  # Get news headlines
+
 # Request Configuration
 DEFAULT_HEADERS = {
     "Accept": "application/json, text/plain",
@@ -22,5 +25,5 @@ DEFAULT_HEADERS = {
 }
 
 # Rate Limiting
-REQUEST_RATE_LIMIT = 10  # requests per second
+REQUEST_RATE_LIMIT = 2  # requests per second (reduced from 10 to avoid 429 errors)
 REQUEST_TIMEOUT = 30  # seconds 

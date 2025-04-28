@@ -1,0 +1,15 @@
+[Unit]
+Description=News Headlines Collector Service
+After=network.target
+
+[Service]
+Type=simple
+User=collector
+WorkingDirectory=/opt/vvv-invest
+Environment=PYTHONPATH=/opt/vvv-invest
+ExecStart=/opt/vvv-invest/venv/bin/python3 flow_analysis/scripts/news_collector.py --continuous
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target 

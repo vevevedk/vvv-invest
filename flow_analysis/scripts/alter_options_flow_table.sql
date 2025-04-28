@@ -4,6 +4,11 @@ ADD COLUMN IF NOT EXISTS delta DECIMAL,
 ADD COLUMN IF NOT EXISTS underlying_price DECIMAL,
 ADD COLUMN IF NOT EXISTS is_significant BOOLEAN DEFAULT FALSE;
 
+-- Add unique constraint for ON CONFLICT clause
+ALTER TABLE trading.options_flow_signals
+ADD CONSTRAINT unique_flow_signal 
+UNIQUE (symbol, timestamp, strike, option_type);
+
 -- Add index for performance optimization
 CREATE INDEX IF NOT EXISTS idx_options_flow_significant 
 ON trading.options_flow(symbol, is_significant, collected_at);
