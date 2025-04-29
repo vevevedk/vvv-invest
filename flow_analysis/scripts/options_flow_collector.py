@@ -185,31 +185,64 @@ class OptionsFlowCollector:
         
         for contract in contracts:
             try:
+                # Extract expiration date - handle both possible field names
+                expiry_date = contract.get('expiration_date') or contract.get('expiry')
+                if not expiry_date:
+                    logger.warning(f"No expiration date found for contract {contract.get('option_symbol', 'unknown')}")
+                    continue
+
                 # Calculate days to expiration
-                expiry = datetime.strptime(contract['expiration_date'], '%Y-%m-%d').replace(tzinfo=self.eastern)
+                expiry = datetime.strptime(expiry_date, '%Y-%m-%d').replace(tzinfo=self.eastern)
                 dte = (expiry - now).days
                 
-                # Calculate bid-ask spread percentage
+                # Extract numeric values with proper error handling
+                volume = int(contract.get('volume', 0) or 0)
+                open_interest = int(contract.get('open_interest', 0) or 0)
+                delta = abs(float(contract.get('delta', 0) or 0))
+                
+                # Calculate bid-ask spread percentage with safety checks
                 bid = float(contract.get('bid', 0) or 0)
                 ask = float(contract.get('ask', 0) or 0)
                 mid_price = (bid + ask) / 2 if bid > 0 and ask > 0 else 0
                 spread_pct = (ask - bid) / mid_price if mid_price > 0 else float('inf')
                 
+                # Log contract details for debugging
+                logger.debug(
+                    f"Contract {contract.get('option_symbol')}: "
+                    f"DTE={dte}, Volume={volume}, OI={open_interest}, "
+                    f"Delta={delta}, Spread%={spread_pct:.2%}"
+                )
+                
                 # Apply filters
                 if all([
                     dte <= MAX_DTE,  # Not too far out
-                    int(contract.get('volume', 0) or 0) >= MIN_VOLUME,  # Sufficient volume
-                    int(contract.get('open_interest', 0) or 0) >= MIN_OPEN_INTEREST,  # Sufficient open interest
-                    abs(float(contract.get('delta', 0) or 0)) >= MIN_DELTA,  # Significant delta
+                    volume >= MIN_VOLUME,  # Sufficient volume
+                    open_interest >= MIN_OPEN_INTEREST,  # Sufficient open interest
+                    delta >= MIN_DELTA,  # Significant delta
                     spread_pct <= MAX_BID_ASK_SPREAD_PCT,  # Reasonable spread
                 ]):
                     filtered_contracts.append(contract)
                     
             except (ValueError, TypeError, KeyError) as e:
-                logger.warning(f"Error filtering contract {contract.get('option_symbol', 'unknown')}: {str(e)}")
+                logger.warning(
+                    f"Error filtering contract {contract.get('option_symbol', 'unknown')}: {str(e)}\n"
+                    f"Contract data: {json.dumps(contract, indent=2)}"
+                )
                 continue
                 
         logger.info(f"Filtered {len(contracts)} contracts down to {len(filtered_contracts)} contracts")
+        
+        # Log sample of filtered contracts for verification
+        if filtered_contracts:
+            sample_size = min(3, len(filtered_contracts))
+            logger.info(f"Sample of filtered contracts:")
+            for contract in filtered_contracts[:sample_size]:
+                logger.info(
+                    f"Symbol: {contract.get('option_symbol')}, "
+                    f"Expiry: {contract.get('expiration_date') or contract.get('expiry')}, "
+                    f"Volume: {contract.get('volume')}, OI: {contract.get('open_interest')}"
+                )
+                
         return filtered_contracts
                     
     def get_option_contracts(self, symbol: str) -> List[Dict]:
