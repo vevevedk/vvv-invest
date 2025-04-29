@@ -29,8 +29,15 @@ from config.db_config import DB_CONFIG, SCHEMA_NAME
 from config.watchlist import MARKET_OPEN, MARKET_CLOSE, SYMBOLS
 
 # Constants
-MIN_PREMIUM = 10000  # Minimum premium to collect ($10k)
+MIN_PREMIUM = 25000  # Increased minimum premium to $25k to focus on significant flows
 BATCH_SIZE = 100  # Number of records to insert at once
+
+# Additional filtering constants
+MIN_VOLUME = 50  # Minimum volume threshold
+MIN_OPEN_INTEREST = 100  # Minimum open interest
+MAX_DTE = 45  # Maximum days to expiration
+MIN_DELTA = 0.15  # Minimum absolute delta value
+MAX_BID_ASK_SPREAD_PCT = 0.15  # Maximum bid-ask spread as percentage of mid price
 
 # Set up logging
 log_dir = Path("logs")
@@ -101,6 +108,40 @@ class OptionsFlowCollector:
                     logger.error(f"Max retries reached for endpoint: {endpoint}")
                     return None
                     
+    def _filter_contracts(self, contracts: List[Dict]) -> List[Dict]:
+        """Apply additional filtering to option contracts"""
+        now = datetime.now(self.eastern)
+        filtered_contracts = []
+        
+        for contract in contracts:
+            try:
+                # Calculate days to expiration
+                expiry = datetime.strptime(contract['expiration_date'], '%Y-%m-%d').replace(tzinfo=self.eastern)
+                dte = (expiry - now).days
+                
+                # Calculate bid-ask spread percentage
+                bid = float(contract.get('bid', 0) or 0)
+                ask = float(contract.get('ask', 0) or 0)
+                mid_price = (bid + ask) / 2 if bid > 0 and ask > 0 else 0
+                spread_pct = (ask - bid) / mid_price if mid_price > 0 else float('inf')
+                
+                # Apply filters
+                if all([
+                    dte <= MAX_DTE,  # Not too far out
+                    int(contract.get('volume', 0) or 0) >= MIN_VOLUME,  # Sufficient volume
+                    int(contract.get('open_interest', 0) or 0) >= MIN_OPEN_INTEREST,  # Sufficient open interest
+                    abs(float(contract.get('delta', 0) or 0)) >= MIN_DELTA,  # Significant delta
+                    spread_pct <= MAX_BID_ASK_SPREAD_PCT,  # Reasonable spread
+                ]):
+                    filtered_contracts.append(contract)
+                    
+            except (ValueError, TypeError, KeyError) as e:
+                logger.warning(f"Error filtering contract {contract.get('option_symbol', 'unknown')}: {str(e)}")
+                continue
+                
+        logger.info(f"Filtered {len(contracts)} contracts down to {len(filtered_contracts)} contracts")
+        return filtered_contracts
+                    
     def get_option_contracts(self, symbol: str) -> List[Dict]:
         """Get active option contracts for a symbol"""
         endpoint = f"{self.base_url}{OPTION_CONTRACTS_ENDPOINT}".format(ticker=symbol)
@@ -113,7 +154,8 @@ class OptionsFlowCollector:
         if not data or "data" not in data:
             return []
             
-        return data["data"]
+        # Apply additional filtering
+        return self._filter_contracts(data["data"])
         
     def get_flow_data(self, contract_id: str) -> pd.DataFrame:
         """Get flow data for a specific option contract"""
