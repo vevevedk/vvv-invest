@@ -15,6 +15,8 @@ from psycopg2.extras import execute_values
 import requests
 import argparse
 import json
+from collections import deque
+from threading import Lock
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
@@ -39,6 +41,15 @@ MAX_DTE = 45  # Maximum days to expiration
 MIN_DELTA = 0.15  # Minimum absolute delta value
 MAX_BID_ASK_SPREAD_PCT = 0.15  # Maximum bid-ask spread as percentage of mid price
 
+# Rate limiting constants
+MAX_REQUESTS_PER_MINUTE = 60  # Maximum requests per minute
+MAX_REQUESTS_PER_HOUR = 3000  # Maximum requests per hour
+RATE_LIMIT_WINDOW = 3600  # Time window for rate limiting (1 hour)
+MIN_REQUEST_INTERVAL = 1.0  # Minimum time between requests in seconds
+BACKOFF_FACTOR = 2  # Factor to increase backoff time
+MAX_BACKOFF = 300  # Maximum backoff time in seconds (5 minutes)
+REQUEST_HISTORY_SIZE = 3600  # Size of request history (1 hour worth of seconds)
+
 # Set up logging
 log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
@@ -58,12 +69,65 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+class RateLimiter:
+    def __init__(self):
+        self.request_times = deque(maxlen=REQUEST_HISTORY_SIZE)
+        self.lock = Lock()
+        self.current_backoff = MIN_REQUEST_INTERVAL
+        self.last_request_time = 0
+        
+    def _clean_old_requests(self, current_time: float) -> None:
+        """Remove requests older than the rate limit window"""
+        while self.request_times and (current_time - self.request_times[0]) > RATE_LIMIT_WINDOW:
+            self.request_times.popleft()
+            
+    def _get_requests_in_window(self, window: int, current_time: float) -> int:
+        """Get number of requests in the specified window"""
+        return sum(1 for t in self.request_times if current_time - t <= window)
+        
+    def wait_if_needed(self) -> None:
+        """Wait if necessary to comply with rate limits"""
+        with self.lock:
+            current_time = time.time()
+            self._clean_old_requests(current_time)
+            
+            # Check rate limits
+            requests_last_minute = self._get_requests_in_window(60, current_time)
+            requests_last_hour = len(self.request_times)
+            
+            if requests_last_minute >= MAX_REQUESTS_PER_MINUTE or requests_last_hour >= MAX_REQUESTS_PER_HOUR:
+                sleep_time = max(
+                    60 - (current_time - self.request_times[-MAX_REQUESTS_PER_MINUTE] if requests_last_minute >= MAX_REQUESTS_PER_MINUTE else 0),
+                    3600 - (current_time - self.request_times[0] if requests_last_hour >= MAX_REQUESTS_PER_HOUR else 0)
+                )
+                logger.warning(f"Rate limit approaching, sleeping for {sleep_time:.2f} seconds")
+                time.sleep(sleep_time)
+                
+            # Ensure minimum interval between requests
+            time_since_last = current_time - self.last_request_time
+            if time_since_last < self.current_backoff:
+                time.sleep(self.current_backoff - time_since_last)
+            
+            # Record this request
+            self.request_times.append(time.time())
+            self.last_request_time = time.time()
+            
+    def update_backoff(self, success: bool) -> None:
+        """Update backoff time based on request success"""
+        if success:
+            # On success, gradually reduce backoff time
+            self.current_backoff = max(MIN_REQUEST_INTERVAL, self.current_backoff / BACKOFF_FACTOR)
+        else:
+            # On failure, increase backoff time
+            self.current_backoff = min(MAX_BACKOFF, self.current_backoff * BACKOFF_FACTOR)
+            logger.warning(f"Increased backoff time to {self.current_backoff:.2f} seconds")
+
 class OptionsFlowCollector:
     def __init__(self):
         self.base_url = UW_BASE_URL
         self.headers = DEFAULT_HEADERS
-        self.last_request_time = 0
         self.eastern = pytz.timezone('US/Eastern')
+        self.rate_limiter = RateLimiter()
         
         # Initialize database connection
         self.db_conn = None
@@ -78,32 +142,38 @@ class OptionsFlowCollector:
             logger.error(f"Failed to connect to database: {str(e)}")
             raise
             
-    def _rate_limit(self):
-        """Implement rate limiting to prevent API throttling"""
-        current_time = time.time()
-        time_since_last_request = current_time - self.last_request_time
-        if time_since_last_request < 1.0 / REQUEST_RATE_LIMIT:
-            time.sleep(1.0 / REQUEST_RATE_LIMIT - time_since_last_request)
-        self.last_request_time = time.time()
-        
     def _make_request(self, endpoint: str, params: Optional[Dict] = None) -> Optional[Dict]:
-        """Make an API request with retry logic"""
+        """Make an API request with retry logic and rate limiting"""
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                self._rate_limit()
+                # Wait for rate limiter
+                self.rate_limiter.wait_if_needed()
+                
+                # Make request
                 response = requests.get(
                     endpoint,
                     headers=self.headers,
                     params=params,
                     timeout=REQUEST_TIMEOUT
                 )
+                
+                # Update rate limiter based on response
+                if response.status_code == 429:  # Too Many Requests
+                    self.rate_limiter.update_backoff(False)
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Rate limited on attempt {attempt + 1}/{max_retries}, backing off...")
+                        continue
+                else:
+                    self.rate_limiter.update_backoff(True)
+                    
                 response.raise_for_status()
                 return response.json()
+                
             except requests.exceptions.RequestException as e:
                 logger.error(f"Request failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
                 if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)  # Exponential backoff
+                    time.sleep(self.rate_limiter.current_backoff)
                 else:
                     logger.error(f"Max retries reached for endpoint: {endpoint}")
                     return None
@@ -168,17 +238,11 @@ class OptionsFlowCollector:
         if not data or "data" not in data:
             return pd.DataFrame()
             
-        # Log raw data for debugging
-        logger.info(f"Raw API response structure: {json.dumps(data['data'][0] if data['data'] else {}, indent=2)}")
-        
         # Convert to DataFrame and process
         df = pd.DataFrame(data["data"])
         if df.empty:
             return df
             
-        # Log available columns
-        logger.info(f"Available columns in API response: {df.columns.tolist()}")
-        
         # Add calculated fields
         df['timestamp'] = pd.to_datetime(df['executed_at'])
         
@@ -191,16 +255,16 @@ class OptionsFlowCollector:
             'ticker': 'symbol',
             'size': 'contract_size',
             'strike_price': 'strike',
-            'option_type': 'option_type',
-            'implied_volatility': 'implied_volatility',
+            'option_type': 'flow_type',  # Updated to match production schema
+            'implied_volatility': 'iv_rank',  # Updated to match production schema
             'delta': 'delta',
             'underlying_price': 'underlying_price',
             'expiration_date': 'expiry'
         }
         
         # Create missing columns with None/NaN if they don't exist
-        for new_col in ['symbol', 'contract_size', 'strike', 'option_type', 
-                       'implied_volatility', 'delta', 'underlying_price', 'expiry']:
+        for new_col in ['symbol', 'contract_size', 'strike', 'flow_type', 
+                       'iv_rank', 'delta', 'underlying_price', 'expiry']:
             if new_col not in df.columns:
                 df[new_col] = None
         
@@ -211,13 +275,10 @@ class OptionsFlowCollector:
         
         # Ensure we have all required columns
         required_columns = [
-            'symbol', 'timestamp', 'expiry', 'strike', 'option_type',
-            'premium', 'contract_size', 'implied_volatility', 'delta',
+            'symbol', 'strike', 'expiry', 'flow_type',
+            'premium', 'contract_size', 'iv_rank', 'delta',
             'underlying_price', 'is_significant'
         ]
-        
-        # Log actual columns for debugging
-        logger.info(f"Final columns before selection: {df.columns.tolist()}")
         
         # Select only the columns we need, filling missing ones with None
         result_df = pd.DataFrame(columns=required_columns)
@@ -242,16 +303,16 @@ class OptionsFlowCollector:
                 
                 # Insert query
                 insert_query = f"""
-                    INSERT INTO {SCHEMA_NAME}.options_flow_signals (
-                        symbol, timestamp, expiry, strike, option_type,
-                        premium, contract_size, implied_volatility, delta,
+                    INSERT INTO {SCHEMA_NAME}.options_flow (
+                        symbol, strike, expiry, flow_type,
+                        premium, contract_size, iv_rank, delta,
                         underlying_price, is_significant
                     ) VALUES %s
-                    ON CONFLICT (symbol, timestamp, strike, option_type) DO UPDATE
+                    ON CONFLICT (symbol, collected_at, strike, flow_type) DO UPDATE
                     SET
                         premium = EXCLUDED.premium,
                         contract_size = EXCLUDED.contract_size,
-                        implied_volatility = EXCLUDED.implied_volatility,
+                        iv_rank = EXCLUDED.iv_rank,
                         delta = EXCLUDED.delta,
                         underlying_price = EXCLUDED.underlying_price,
                         is_significant = EXCLUDED.is_significant
@@ -265,61 +326,6 @@ class OptionsFlowCollector:
                 
         except Exception as e:
             logger.error(f"Error saving flow signals: {str(e)}")
-            self.db_conn.rollback()
-            raise
-            
-    def update_market_sentiment(self, symbol: str, interval: str = '5min') -> None:
-        """Update market sentiment metrics"""
-        try:
-            with self.db_conn.cursor() as cur:
-                # Calculate sentiment metrics
-                query = f"""
-                    INSERT INTO {SCHEMA_NAME}.market_sentiment (
-                        symbol, timestamp, interval,
-                        call_volume, put_volume,
-                        call_premium, put_premium,
-                        net_delta, avg_iv,
-                        bullish_flow, bearish_flow,
-                        sentiment_score
-                    )
-                    SELECT
-                        symbol,
-                        date_trunc(%s, timestamp) as interval_timestamp,
-                        %s as interval,
-                        SUM(CASE WHEN option_type = 'call' THEN contract_size ELSE 0 END) as call_volume,
-                        SUM(CASE WHEN option_type = 'put' THEN contract_size ELSE 0 END) as put_volume,
-                        SUM(CASE WHEN option_type = 'call' THEN premium ELSE 0 END) as call_premium,
-                        SUM(CASE WHEN option_type = 'put' THEN premium ELSE 0 END) as put_premium,
-                        SUM(delta * contract_size) as net_delta,
-                        AVG(implied_volatility) as avg_iv,
-                        SUM(CASE WHEN option_type = 'call' AND is_significant THEN premium ELSE 0 END) as bullish_flow,
-                        SUM(CASE WHEN option_type = 'put' AND is_significant THEN premium ELSE 0 END) as bearish_flow,
-                        (SUM(CASE WHEN option_type = 'call' THEN premium ELSE 0 END) - 
-                         SUM(CASE WHEN option_type = 'put' THEN premium ELSE 0 END)) /
-                        NULLIF(SUM(premium), 0) as sentiment_score
-                    FROM {SCHEMA_NAME}.options_flow_signals
-                    WHERE symbol = %s
-                    AND timestamp >= NOW() - INTERVAL '1 day'
-                    GROUP BY symbol, date_trunc(%s, timestamp)
-                    ON CONFLICT (symbol, timestamp, interval) DO UPDATE
-                    SET
-                        call_volume = EXCLUDED.call_volume,
-                        put_volume = EXCLUDED.put_volume,
-                        call_premium = EXCLUDED.call_premium,
-                        put_premium = EXCLUDED.put_premium,
-                        net_delta = EXCLUDED.net_delta,
-                        avg_iv = EXCLUDED.avg_iv,
-                        bullish_flow = EXCLUDED.bullish_flow,
-                        bearish_flow = EXCLUDED.bearish_flow,
-                        sentiment_score = EXCLUDED.sentiment_score
-                """
-                
-                cur.execute(query, (interval, interval, symbol, interval))
-                self.db_conn.commit()
-                logger.info(f"Updated market sentiment for {symbol}")
-                
-        except Exception as e:
-            logger.error(f"Error updating market sentiment: {str(e)}")
             self.db_conn.rollback()
             raise
             
@@ -369,9 +375,6 @@ class OptionsFlowCollector:
                 
                 # Save to database
                 self.save_flow_signals(combined_flow)
-                
-                # Update sentiment metrics
-                self.update_market_sentiment(symbol)
                 
                 logger.info(f"Successfully collected and processed flow data for {symbol}")
             else:
