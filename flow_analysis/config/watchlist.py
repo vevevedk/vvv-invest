@@ -10,18 +10,6 @@ SYMBOLS = [
     
     # Safe Haven Assets
     "GLD",  # Gold ETF
-    "SLV",  # Silver ETF
-    "TLT",  # 20+ Year Treasury ETF
-    "FXF",  # Swiss Franc Trust
-    
-    # Sector ETFs
-    "XLF",  # Financial Sector ETF
-    "SMH",  # Semiconductor ETF
-    "XLE",  # Energy Sector ETF
-    
-    # International ETFs
-    "EZU",  # Eurozone ETF
-    "EFA"   # Developed Markets ex-US
 ]
 
 # Dark Pool Trade Thresholds

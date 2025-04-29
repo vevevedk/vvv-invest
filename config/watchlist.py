@@ -5,7 +5,7 @@ Watchlist and market configuration
 from datetime import time
 
 # Symbols to track
-SYMBOLS = ["SPY", "QQQ"]
+SYMBOLS = ["SPY", "QQQ", "GLD"]
 
 # Trade thresholds
 BLOCK_SIZE_THRESHOLD = 10000  # Minimum size for a block trade
