@@ -2,8 +2,9 @@
 
 ## Prerequisites
 - Digital Ocean droplet (Ubuntu 20.04 or later recommended)
+- Digital Ocean managed PostgreSQL database
 - SSH access to the droplet
-- PostgreSQL database (can be on the same droplet or a separate managed database)
+- DO API token for database access
 
 ## Deployment Steps
 
@@ -27,44 +28,26 @@
    chmod 600 /home/deployer/.ssh/authorized_keys
    ```
 
-4. **Transfer project files**
-   From your local machine:
+4. **Clone the repository**
    ```bash
-   scp -r ./* deployer@your_droplet_ip:/tmp/darkpool_collector
+   su - deployer
+   git clone <repository-url>
+   cd darkpool-collector
    ```
 
 5. **Run the deployment script**
-   On the droplet:
    ```bash
-   cd /tmp/darkpool_collector
-   chmod +x deploy.sh
-   ./deploy.sh
+   chmod +x deploy-do.sh
+   ./deploy-do.sh
    ```
 
-6. **Verify the setup**
-   - Check the cron job:
-     ```bash
-     crontab -l
-     ```
-   - Check the logs:
-     ```bash
-     tail -f /var/log/darkpool_collector/cron.log
-     ```
-
-## Configuration
-
-1. **Environment Variables**
-   Make sure your `.env` file contains:
-   - API_KEY: Your Unusual Whales API key
-   - DB_CONFIG: Database connection details
-
-2. **Database Setup**
-   If using a local PostgreSQL instance:
+6. **Verify the installation**
    ```bash
-   sudo -u postgres psql
-   CREATE DATABASE trading_data;
-   CREATE USER deployer WITH PASSWORD 'your_password';
-   GRANT ALL PRIVILEGES ON DATABASE trading_data TO deployer;
+   # Check service status
+   sudo systemctl status darkpool_collector
+   
+   # Check logs
+   tail -f /var/log/darkpool_collector/darkpool_collector.log
    ```
 
 ## Database Configuration
@@ -101,54 +84,125 @@ DATABASE_URL = "postgresql://doadmin:${DB_PASSWORD}@vvv-trading-db-do-user-21110
 - Monitor storage usage (limit: 10 GiB)
 - Set up alerts for 80% usage thresholds
 
-## Monitoring
+## Service Management
 
-1. **Log Files**
-   - Main collector log: `/var/log/darkpool_collector/darkpool_collector.log`
-   - Cron job log: `/var/log/darkpool_collector/cron.log`
+### Start/Stop/Restart the service
+```bash
+sudo systemctl start darkpool_collector
+sudo systemctl stop darkpool_collector
+sudo systemctl restart darkpool_collector
+```
 
-2. **System Status**
-   ```bash
-   # Check if the collector is running
-   ps aux | grep collect_darkpool_trades.py
-   
-   # Check database connection
-   psql -U deployer -d trading_data -c "SELECT COUNT(*) FROM trading.darkpool_trades;"
-   ```
+### Check service status
+```bash
+sudo systemctl status darkpool_collector
+```
+
+### View logs
+```bash
+# View current logs
+tail -f /var/log/darkpool_collector/darkpool_collector.log
+
+# View archived logs
+ls -l /var/log/darkpool_collector/
+```
+
+## Configuration
+
+The application configuration is located in:
+- `/etc/darkpool_collector/` - Configuration files
+- `/opt/darkpool_collector/` - Application files
+- `/var/log/darkpool_collector/` - Log files
+
+## Log Rotation
+
+Logs are automatically rotated daily and kept for 14 days. The configuration is in:
+```bash
+/etc/logrotate.d/darkpool_collector
+```
 
 ## Troubleshooting
 
-1. **Cron Job Issues**
-   - Check cron logs: `grep CRON /var/log/syslog`
-   - Verify Python path: `which python3`
+1. **Service won't start**
+   - Check systemd logs: `journalctl -u darkpool_collector`
+   - Verify database connection
+   - Check file permissions
 
-2. **Database Connection Issues**
-   - Check PostgreSQL status: `sudo systemctl status postgresql`
-   - Verify connection: `psql -U deployer -d trading_data`
+2. **Logs not being written**
+   - Verify log directory permissions
+   - Check disk space
+   - Verify logrotate configuration
 
-3. **API Issues**
-   - Check API key validity
-   - Verify network connectivity
+3. **Database connection issues**
+   - Verify PostgreSQL is running
+   - Check connection string in configuration
+   - Verify database user permissions
+   - Check if IP is whitelisted in DO
+   - Verify SSL certificate configuration
 
-## Maintenance
+## Security Considerations
 
-1. **Regular Updates**
+1. **File Permissions**
+   - Application files: 755
+   - Configuration files: 640
+   - Log files: 640
+
+2. **Service User**
+   - Runs as non-root user
+   - Limited system access
+   - Specific database permissions
+
+3. **Network Security**
+   - Only necessary ports open
+   - Database access restricted to specific IPs
+   - API keys properly secured
+   - SSL required for database connections
+
+## Backup and Recovery
+
+1. **Database Backup**
    ```bash
-   sudo apt-get update
-   sudo apt-get upgrade
-   pip3 install --upgrade -r requirements.txt
+   # Create backup
+   pg_dump -U doadmin -h vvv-trading-db-do-user-21110609-0.i.db.ondigitalocean.com -p 25060 -d defaultdb --ssl-mode=require > backup.sql
+   
+   # Restore from backup
+   psql -U doadmin -h vvv-trading-db-do-user-21110609-0.i.db.ondigitalocean.com -p 25060 -d defaultdb --ssl-mode=require < backup.sql
    ```
 
-2. **Log Rotation**
-   Add to `/etc/logrotate.d/darkpool_collector`:
+2. **Configuration Backup**
+   ```bash
+   # Backup configuration
+   tar -czf config_backup.tar.gz /etc/darkpool_collector/
+   
+   # Restore configuration
+   tar -xzf config_backup.tar.gz -C /
    ```
-   /var/log/darkpool_collector/*.log {
-       daily
-       missingok
-       rotate 7
-       compress
-       delaycompress
-       notifempty
-       create 0640 deployer deployer
-   }
-   ``` 
+
+## Monitoring
+
+1. **Service Health**
+   - Systemd status
+   - Log file monitoring
+   - Database connection checks
+
+2. **Performance Metrics**
+   - CPU usage
+   - Memory usage
+   - Disk space
+   - Database performance
+   - Connection count monitoring
+
+## Updates
+
+To update the application:
+
+1. Pull the latest changes
+2. Run the deployment script
+3. Restart the service
+
+```bash
+cd /opt/darkpool_collector
+git pull
+./deploy-do.sh
+sudo systemctl restart darkpool_collector
+``` 

@@ -3,40 +3,43 @@ Dark Pool Trade Collector
 Continuously collects dark pool trades throughout the trading day.
 """
 
-import os
 import sys
 import time
 import logging
 from logging.handlers import RotatingFileHandler
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 import pandas as pd
 from pathlib import Path
 import pytz
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 import psycopg2
 from psycopg2.extras import execute_values
 import requests
 import argparse
+import time as time_module
+from requests.exceptions import RequestException
 
 # Add the project root to the Python path
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
-from config.api_config import (
-    UW_API_TOKEN, UW_BASE_URL, DARKPOOL_RECENT_ENDPOINT,
+from flow_analysis.config.api_config import (
+    UW_BASE_URL, DARKPOOL_RECENT_ENDPOINT,
     DEFAULT_HEADERS, REQUEST_TIMEOUT, REQUEST_RATE_LIMIT
 )
-from config.db_config import DB_CONFIG, SCHEMA_NAME, TABLE_NAME
-from config.watchlist import MARKET_OPEN, MARKET_CLOSE, SYMBOLS
+from flow_analysis.config.db_config import DB_CONFIG, SCHEMA_NAME, TABLE_NAME
+from flow_analysis.config.watchlist import MARKET_OPEN, MARKET_CLOSE, SYMBOLS
 
 class DatabaseLogHandler(logging.Handler):
+    """Custom logging handler that writes logs to the database."""
+    
     def __init__(self, conn):
         super().__init__()
         self.conn = conn
 
     def emit(self, record):
         if self.conn.closed:
-            print(f"Warning: Database connection is closed, reconnecting...")
+            print("Warning: Database connection is closed, reconnecting...")
             return
         
         try:
@@ -54,7 +57,7 @@ class DatabaseLogHandler(logging.Handler):
                 )
                 self.conn.commit()
         except Exception as e:
-            print(f"Error writing to database log: {str(e)}")  # Print the actual error
+            print(f"Error writing to database log: {str(e)}")
             pass  # Still avoid recursion
 
 # Set up logging
@@ -62,345 +65,331 @@ log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
 log_file = log_dir / "darkpool_collector.log"
 
+# Configure logging with proper rotation and formatting
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        # Rotate file logs: 5MB per file, keep 5 backup files
         RotatingFileHandler(
             log_file,
-            maxBytes=5*1024*1024,  # 5MB
-            backupCount=5
+            maxBytes=10*1024*1024,  # 10MB
+            backupCount=5,
+            encoding='utf-8'
         ),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
 
+# Add error handler for uncaught exceptions
+def handle_exception(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    logger.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+
+sys.excepthook = handle_exception
+
 class DarkPoolCollector:
-    def __init__(self, data_dir: Optional[Path] = None):
-        self.base_url = UW_BASE_URL
-        self.headers = DEFAULT_HEADERS
-        self.data_dir = data_dir or (project_root / "data/raw/darkpool")
-        self.data_dir.mkdir(parents=True, exist_ok=True)
-        self.last_request_time = 0
-        self.collected_tracking_ids = set()
+    """Collect dark pool trades from the API and save them to the database."""
+    
+    def __init__(self, db_conn=None):
+        """Initialize the collector."""
+        self.db_conn = db_conn
+        self.market_tz = pytz.timezone('US/Eastern')
+        self.rate_limit = 1.0  # seconds between requests
+        self._last_request_time = None
+        self.logger = self._setup_logger()
         
-        # Set timezone to US/Eastern for market hours
-        self.eastern = pytz.timezone('US/Eastern')
+    def _setup_logger(self) -> logging.Logger:
+        """Set up the logger for the collector."""
+        logger = logging.getLogger(__name__)
+        logger.setLevel(logging.INFO)
         
-        # Initialize database connection
-        self.db_conn = None
-        self.connect_db()
+        # Create logs directory if it doesn't exist
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
         
-        # Add database log handler
-        db_handler = DatabaseLogHandler(self.db_conn)
-        logger.addHandler(db_handler)
+        # Add file handler
+        file_handler = RotatingFileHandler(
+            log_dir / "darkpool_collector.log",
+            maxBytes=10_000_000,  # 10MB
+            backupCount=5
+        )
+        file_handler.setLevel(logging.INFO)
         
-    def connect_db(self):
-        """Establish database connection"""
+        # Add console handler
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        
+        # Create formatter
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        file_handler.setFormatter(formatter)
+        console_handler.setFormatter(formatter)
+        
+        # Add handlers to logger
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+        
+        return logger
+
+    def connect_db(self) -> None:
+        """Connect to the database."""
         try:
-            self.db_conn = psycopg2.connect(**DB_CONFIG)
-            logger.info("Successfully connected to database")
+            if self.db_conn is None or self.db_conn.closed:
+                self.db_conn = psycopg2.connect(**DB_CONFIG)
+                self.logger.info("Successfully connected to database")
         except Exception as e:
-            logger.error(f"Failed to connect to database: {str(e)}")
+            self.logger.error(f"Error connecting to database: {str(e)}")
             raise
-            
-    def _rate_limit(self):
-        """Implement rate limiting to prevent API throttling"""
-        current_time = time.time()
-        time_since_last_request = current_time - self.last_request_time
-        if time_since_last_request < 1.0 / REQUEST_RATE_LIMIT:
-            time.sleep(1.0 / REQUEST_RATE_LIMIT - time_since_last_request)
-        self.last_request_time = time.time()
-        
-    def _make_request(self, endpoint: str, params: Optional[Dict] = None) -> Optional[Dict]:
-        """Make an API request with retry logic"""
-        try:
-            self._rate_limit()
-            logger.info(f"Making request to endpoint: {endpoint}")
-            logger.info(f"Request headers: {self.headers}")
-            logger.info(f"Request params: {params}")
-            response = requests.get(
-                endpoint,
-                headers=self.headers,
-                params=params,
-                timeout=REQUEST_TIMEOUT
-            )
-            logger.info(f"Response status code: {response.status_code}")
-            logger.info(f"Response URL: {response.url}")
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"Request failed: {str(e)}")
-            return None
-            
-    def _validate_response(self, data: Dict) -> bool:
-        """Validate API response data"""
-        if not isinstance(data, dict):
-            logger.error("Invalid response format: not a dictionary")
+
+    def _rate_limit(self) -> None:
+        """Enforce rate limiting between API requests."""
+        current_time = time_module.time()
+        if hasattr(self, '_last_request_time') and self._last_request_time is not None:
+            time_since_last_request = current_time - self._last_request_time
+            if time_since_last_request < self.rate_limit:
+                sleep_time = self.rate_limit - time_since_last_request
+                time_module.sleep(sleep_time)
+        self._last_request_time = time_module.time()
+
+    def _validate_response(self, response_data: Dict) -> bool:
+        """Validate the API response data."""
+        if not isinstance(response_data, dict):
+            self.logger.error("Invalid response format: not a dictionary")
             return False
-        if "data" not in data:
-            logger.error("Invalid response format: missing 'data' field")
+        if 'data' not in response_data:
+            self.logger.error("Invalid response format: missing 'data' key")
+            return False
+        if not isinstance(response_data['data'], list):
+            self.logger.error("Invalid response format: 'data' is not a list")
             return False
         return True
+
+    def _make_request(self, endpoint: str) -> Optional[Dict]:
+        """Make an API request with retry logic."""
+        max_retries = 3
+        retry_count = 0
+        backoff_time = 1.0  # Initial backoff time in seconds
         
-    def _process_trades(self, trades_data: List[Dict]) -> pd.DataFrame:
-        """Process raw trades data into a DataFrame"""
-        if not trades_data:
-            logger.warning("No trades data received from API")
-            return pd.DataFrame()
-            
-        logger.info(f"Received {len(trades_data)} trades from API")
-        
-        # Convert to DataFrame
-        trades = pd.DataFrame(trades_data)
-        logger.info(f"DataFrame created with columns: {trades.columns.tolist()}")
-        
-        # Map ticker to symbol
-        if 'ticker' in trades.columns:
-            trades['symbol'] = trades['ticker']
-            trades.drop('ticker', axis=1, inplace=True)
-        
-        # Filter by watchlist symbols
-        initial_count = len(trades)
-        trades = trades[trades['symbol'].isin(SYMBOLS)]
-        logger.info(f"Filtered to {len(trades)} trades for watchlist symbols: {SYMBOLS}")
-        
-        # Add collection timestamp
-        trades['collection_time'] = datetime.now(self.eastern)
-        
-        # Remove any trades we've already collected
-        if 'tracking_id' in trades.columns:
-            before_dedup = len(trades)
-            trades = trades[~trades['tracking_id'].isin(self.collected_tracking_ids)]
-            self.collected_tracking_ids.update(trades['tracking_id'].tolist())
-            logger.info(f"Removed {before_dedup - len(trades)} duplicate trades")
-            
-        logger.info(f"Returning {len(trades)} unique trades for processing")
-        return trades
-        
-    def collect_trades(self) -> pd.DataFrame:
-        """Collect the latest dark pool trades"""
-        endpoint = f"{self.base_url}{DARKPOOL_RECENT_ENDPOINT}"
-        
-        # If market is closed, get yesterday's data for testing
-        if not self.is_market_open():
-            yesterday = datetime.now(self.eastern) - timedelta(days=1)
-            date_str = yesterday.strftime("%Y-%m-%d")
-            logger.info(f"Market is closed, fetching yesterday's data ({date_str}) for testing")
-        else:
-            date_str = datetime.now(self.eastern).strftime("%Y-%m-%d")
-            
-        params = {
-            "limit": 200,  # Maximum allowed
-            "date": date_str
-        }
-        
-        data = self._make_request(endpoint, params)
-        if data and self._validate_response(data):
-            return self._process_trades(data["data"])
-        return pd.DataFrame()
-        
-    def save_trades_to_db(self, trades: pd.DataFrame) -> None:
-        """Save trades to PostgreSQL database"""
-        if trades.empty:
-            logger.warning("No trades to save - DataFrame is empty")
-            return
-            
-        try:
-            # Ensure database connection is active
-            if self.db_conn.closed:
-                logger.info("Database connection closed, reconnecting...")
-                self.connect_db()
-                
-            # Start a fresh transaction
-            self.db_conn.rollback()  # Clear any failed transaction state
-                
-            with self.db_conn.cursor() as cur:
-                # Prepare data for insertion
-                records = trades.to_dict('records')
-                logger.info(f"Preparing to insert {len(records)} trades")
-                
-                # Define columns for insertion
-                columns = [
-                    'tracking_id', 'symbol', 'size', 'price', 'volume',
-                    'premium', 'executed_at', 'nbbo_ask', 'nbbo_bid',
-                    'market_center', 'sale_cond_codes', 'collection_time'
-                ]
-                
-                # Create the insert query
-                insert_query = f"""
-                    INSERT INTO {SCHEMA_NAME}.{TABLE_NAME} 
-                    ({', '.join(columns)})
-                    VALUES %s
-                    ON CONFLICT (tracking_id) DO NOTHING
-                """
-                
-                # Prepare values for insertion
-                values = []
-                for record in records:
-                    try:
-                        value = (
-                            record.get('tracking_id'),
-                            record.get('symbol'),
-                            record.get('size'),
-                            record.get('price'),
-                            record.get('volume'),
-                            record.get('premium'),
-                            record.get('executed_at'),
-                            record.get('nbbo_ask'),
-                            record.get('nbbo_bid'),
-                            record.get('market_center'),
-                            record.get('sale_cond_codes'),
-                            record.get('collection_time')
-                        )
-                        values.append(value)
-                    except Exception as e:
-                        logger.error(f"Error preparing record for insertion: {str(e)}")
-                        logger.error(f"Problematic record: {record}")
-                        continue
-                
-                if not values:
-                    logger.error("No valid values prepared for insertion")
-                    return
-                
-                try:
-                    logger.info(f"Executing insert query with {len(values)} values")
-                    # Execute the insert
-                    execute_values(cur, insert_query, values)
-                    self.db_conn.commit()
-                    
-                    # Verify the insertion
-                    cur.execute(f"SELECT COUNT(*) FROM {SCHEMA_NAME}.{TABLE_NAME}")
-                    total_count = cur.fetchone()[0]
-                    logger.info(f"Total trades in database after insertion: {total_count}")
-                except psycopg2.Error as e:
-                    logger.error(f"Database error during insertion: {str(e)}")
-                    self.db_conn.rollback()
-                    raise
-                
-        except Exception as e:
-            logger.error(f"Error saving trades to database: {str(e)}")
-            if not isinstance(e, psycopg2.Error):  # Only log details if not already logged
-                logger.error(f"Error details: {str(e)}")
+        while retry_count < max_retries:
             try:
-                self.db_conn.rollback()
-            except Exception:
-                pass  # Connection might be closed
+                self._rate_limit()
+                response = requests.get(endpoint)
+                response.raise_for_status()
+                try:
+                    data = response.json()
+                except ValueError as e:
+                    self.logger.error(f"Invalid JSON response: {str(e)}")
+                    return None
+                if not self._validate_response(data):
+                    raise ValueError("Invalid response data")
+                return data
+            except (requests.exceptions.RequestException, ValueError) as e:
+                retry_count += 1
+                if retry_count == max_retries:
+                    self.logger.error(f"Failed to make request after {max_retries} retries: {str(e)}")
+                    return None
+                
+                self.logger.warning(f"Request failed (attempt {retry_count}/{max_retries}): {str(e)}")
+                time_module.sleep(backoff_time)
+                backoff_time *= 2  # Exponential backoff
+                
+        return None
+
+    def collect_trades(self) -> pd.DataFrame:
+        """Collect recent dark pool trades."""
+        try:
+            endpoint = f"{UW_BASE_URL}{DARKPOOL_RECENT_ENDPOINT}"
+            response = self._make_request(endpoint)
+            
+            if response is None or not response.get('data'):
+                self.logger.warning("No trades data received")
+                return pd.DataFrame()
+            
+            trades = self._process_trades(response['data'])
+            self.logger.info(f"Collected {len(trades)} trades")
+            return trades
+        except Exception as e:
+            self.logger.error(f"Error collecting trades: {str(e)}")
             raise
-            
+
+    def _process_trades(self, trades_data: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Process raw trades data into a DataFrame."""
+        try:
+            trades = pd.DataFrame(trades_data)
+            if trades.empty:
+                return trades
+
+            # Map API column names to our expected column names
+            column_mapping = {
+                'tracking_id': 'tracking_id',
+                'ticker': 'symbol',
+                'executed_at': 'timestamp',
+                'market_center': 'exchange',
+                'sale_cond_codes': 'trade_type'
+            }
+            trades = trades.rename(columns=column_mapping)
+
+            # Add dark_pool column
+            trades['dark_pool'] = 'true'
+
+            # Validate required columns
+            required_columns = [
+                'tracking_id', 'symbol', 'price', 'size', 'timestamp',
+                'trade_type', 'exchange', 'dark_pool'
+            ]
+            missing_columns = [col for col in required_columns if col not in trades.columns]
+            if missing_columns:
+                raise ValueError(f"Missing required columns: {missing_columns}")
+
+            # Convert data types
+            try:
+                trades['price'] = pd.to_numeric(trades['price'], errors='raise')
+                trades['size'] = pd.to_numeric(trades['size'], errors='raise')
+                trades['timestamp'] = pd.to_datetime(trades['timestamp'], errors='raise')
+            except Exception as e:
+                raise ValueError(f"Error converting data types: {str(e)}")
+
+            # Filter out invalid rows
+            trades = trades.dropna(subset=['price', 'size', 'timestamp'])
+            return trades
+        except Exception as e:
+            self.logger.error(f"Error processing trades: {str(e)}")
+            raise
+
+    def save_trades_to_db(self, trades: pd.DataFrame) -> None:
+        """Save processed trades to the database."""
+        if trades.empty:
+            self.logger.warning("No trades to save - DataFrame is empty")
+            return
+
+        try:
+            if self.db_conn is None or self.db_conn.closed:
+                self.logger.warning("Database connection is closed, reconnecting...")
+                self.connect_db()
+                if self.db_conn.closed:
+                    raise Exception("Failed to reconnect to database")
+
+            # Create table if it doesn't exist
+            create_table_sql = """
+            CREATE TABLE IF NOT EXISTS darkpool_trades (
+                tracking_id TEXT PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                price REAL NOT NULL,
+                size INTEGER NOT NULL,
+                timestamp TIMESTAMP NOT NULL,
+                trade_type TEXT NOT NULL,
+                exchange TEXT NOT NULL,
+                dark_pool TEXT NOT NULL
+            )
+            """
+            self.db_conn.execute(create_table_sql)
+            self.db_conn.commit()
+
+            # Insert trades
+            trades.to_sql('darkpool_trades', self.db_conn, if_exists='append', index=False)
+            self.db_conn.commit()
+            self.logger.info(f"Successfully saved {len(trades)} trades to database")
+        except Exception as e:
+            if not self.db_conn.closed:
+                self.db_conn.rollback()
+            self.logger.error(f"Error saving trades to database: {str(e)}")
+            raise
+
     def is_market_open(self) -> bool:
-        """Check if the market is currently open"""
-        # Get current time in Eastern timezone
-        current_time = datetime.now(self.eastern)
-        
-        # Check if it's a weekday
-        if current_time.weekday() >= 5:  # 5 is Saturday, 6 is Sunday
-            logger.info(f"Market closed - weekend ({current_time.strftime('%A')})")
+        """Check if the market is currently open."""
+        try:
+            now = datetime.now(self.market_tz)
+            current_time = now.time()
+            current_day = now.weekday()
+
+            # Check if it's a weekday
+            if current_day >= 5:  # 5 = Saturday, 6 = Sunday
+                return False
+
+            # Check if current time is within market hours
+            market_open = time(9, 30)  # 9:30 AM
+            market_close = time(16, 0)  # 4:00 PM
+
+            return market_open <= current_time < market_close
+        except Exception as e:
+            self.logger.error(f"Error checking market hours: {str(e)}")
             return False
-            
-        # Check if it's within market hours
-        market_open = current_time.replace(
-            hour=int(MARKET_OPEN.split(':')[0]),
-            minute=int(MARKET_OPEN.split(':')[1]),
-            second=0,
-            microsecond=0
-        )
-        market_close = current_time.replace(
-            hour=int(MARKET_CLOSE.split(':')[0]),
-            minute=int(MARKET_CLOSE.split(':')[1]),
-            second=0,
-            microsecond=0
-        )
-        
-        is_open = market_open <= current_time <= market_close
-        if not is_open:
-            next_open = market_open
-            if current_time > market_close:
-                next_open = (market_open + timedelta(days=1))
-            while next_open.weekday() >= 5:  # Skip weekends
-                next_open += timedelta(days=1)
-            logger.info(f"Market closed - Next open: {next_open.strftime('%Y-%m-%d %H:%M')} ET")
-        return is_open
 
     def get_next_market_open(self) -> datetime:
-        """Get the next market open time"""
-        current_time = datetime.now(self.eastern)
-        
-        # Start with current day's market open
-        next_open = current_time.replace(
-            hour=int(MARKET_OPEN.split(':')[0]),
-            minute=int(MARKET_OPEN.split(':')[1]),
-            second=0,
-            microsecond=0
-        )
-        
-        # If we're past today's market open, move to next business day
-        if current_time >= next_open:
-            next_open += timedelta(days=1)
-        
-        # Skip weekends
-        while next_open.weekday() >= 5:  # 5 is Saturday, 6 is Sunday
-            next_open += timedelta(days=1)
-        
-        return next_open
+        """Get the next market open time."""
+        try:
+            now = datetime.now(self.market_tz)
+            current_time = now.time()
+            current_day = now.weekday()
 
-    def run(self):
-        """Run one collection cycle"""
-        if not self.is_market_open():
-            return
-        
-        logger.info("Market open - collecting trades...")
-        start_time = time.time()
-        
-        trades = self.collect_trades()
-        if not trades.empty:
-            self.save_trades_to_db(trades)
-            logger.info(f"Collected and saved {len(trades)} trades for symbols: {trades['symbol'].unique().tolist()}")
-        else:
-            logger.info("No new trades collected")
-        
-        duration_ms = int((time.time() - start_time) * 1000)
-        logger.info(f"Collection cycle completed in {duration_ms}ms")
+            # Start with today's market open time
+            next_open = datetime.combine(now.date(), MARKET_OPEN)
+            next_open = self.market_tz.localize(next_open)
+
+            # If we're past today's market open or it's a weekend,
+            # move to the next business day
+            if current_time >= MARKET_OPEN or current_day >= 5:
+                days_to_add = 1
+                if current_day == 5:  # Saturday
+                    days_to_add = 2
+                elif current_day == 6:  # Sunday
+                    days_to_add = 1
+                next_open += timedelta(days=days_to_add)
+
+            return next_open
+        except Exception as e:
+            self.logger.error(f"Error calculating next market open: {str(e)}")
+            # Return next day at market open as a fallback
+            next_day = datetime.now(self.market_tz) + timedelta(days=1)
+            return datetime.combine(next_day.date(), MARKET_OPEN)
+
+    def run(self) -> None:
+        """Run the collector continuously."""
+        try:
+            while True:
+                if self.is_market_open():
+                    trades = self.collect_trades()
+                    if not trades.empty:
+                        self.save_trades_to_db(trades)
+                    time_module.sleep(self.rate_limit)
+                else:
+                    next_open = self.get_next_market_open()
+                    wait_time = (next_open - datetime.now(self.market_tz)).total_seconds()
+                    self.logger.info(f"Market is closed. Waiting until {next_open} to resume collection")
+                    time_module.sleep(wait_time)
+        except KeyboardInterrupt:
+            self.logger.info("Collector stopped by user")
+        except Exception as e:
+            self.logger.error(f"Error in collector run loop: {str(e)}")
+            raise
 
     def __del__(self):
-        """Clean up database connection"""
-        if self.db_conn and not self.db_conn.closed:
+        """Clean up resources on deletion."""
+        if hasattr(self, 'db_conn') and self.db_conn is not None and not self.db_conn.closed:
             self.db_conn.close()
 
 def main():
-    # Add argument parsing
+    """Main entry point."""
     parser = argparse.ArgumentParser(description='Dark Pool Trade Collector')
-    parser.add_argument('--historical', action='store_true', help='Fetch data from last trading day')
+    parser.add_argument('--historical', action='store_true',
+                       help='Collect historical data instead of real-time')
     args = parser.parse_args()
 
-    collector = DarkPoolCollector()
-    
-    if args.historical:
-        # Override collect_trades method temporarily for historical data
-        def historical_collect():
-            endpoint = f"{collector.base_url}{DARKPOOL_RECENT_ENDPOINT}"
-            params = {
-                "limit": 200,
-                "date": "2025-04-17"  # Thursday before Good Friday
-            }
-            logger.info(f"Fetching historical data for 2025-04-17")
-            data = collector._make_request(endpoint, params)
-            if data and collector._validate_response(data):
-                return collector._process_trades(data["data"])
-            return pd.DataFrame()
-        
-        # Collect and save historical data once
-        trades = historical_collect()
-        if not trades.empty:
-            collector.save_trades_to_db(trades)
-            logger.info("Historical data collection complete")
-        else:
-            logger.warning("No historical trades collected")
-    else:
-        # Single collection cycle
-        collector.run()
+    try:
+        collector = DarkPoolCollector()
+        collector.connect_db()
 
-if __name__ == "__main__":
+        if args.historical:
+            historical_collect()
+        else:
+            collector.run()
+    except Exception as e:
+        logger.error(f"Fatal error: {str(e)}")
+        sys.exit(1)
+
+if __name__ == '__main__':
     main() 
