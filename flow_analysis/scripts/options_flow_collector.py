@@ -15,6 +15,7 @@ from psycopg2.extras import execute_values
 import requests
 import argparse
 import json
+from sqlalchemy import create_engine
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
@@ -50,6 +51,94 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Database connection setup
+DB_CONFIG = {
+    'dbname': 'defaultdb',
+    'user': 'doadmin',
+    'password': 'AVNS_SrG4Bo3B7uCNEPONkE4',
+    'host': 'vvv-trading-db-do-user-2110609-0.i.db.ondigitalocean.com',
+    'port': '25060'
+}
+
+# Create database URL
+DATABASE_URL = f"postgresql://{DB_CONFIG['user']}:{DB_CONFIG['password']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['dbname']}"
+
+# Create engine with SSL required
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={
+        'sslmode': 'require'
+    }
+)
+
+# Calculate timestamp for 24 hours ago
+twenty_four_hours_ago = datetime.now() - timedelta(hours=24)
+
+# Query dark pool trades from last 24 hours with enhanced metrics
+query = """
+SELECT 
+    t.*,
+    date_trunc('hour', t.executed_at) as trade_hour,
+    t.price - t.nbbo_bid as price_impact,
+    (t.price - t.nbbo_bid) / t.nbbo_bid as price_impact_pct,
+    CASE 
+        WHEN t.size >= 10000 THEN 'Block Trade'
+        WHEN t.premium >= 0.02 THEN 'High Premium'
+        ELSE 'Regular'
+    END as trade_type,
+    count(*) over (partition by t.symbol, date_trunc('hour', t.executed_at)) as trades_per_hour,
+    sum(t.size) over (partition by t.symbol, date_trunc('hour', t.executed_at)) as volume_per_hour
+FROM trading.darkpool_trades t
+WHERE t.executed_at >= :cutoff_time
+ORDER BY t.executed_at DESC
+"""
+
+# Fetch trades
+print("Fetching dark pool trades from last 24 hours...")
+trades_df = pd.read_sql_query(
+    query, 
+    engine, 
+    params={'cutoff_time': twenty_four_hours_ago}
+)
+
+# Convert timestamp columns
+trades_df['executed_at'] = pd.to_datetime(trades_df['executed_at'])
+trades_df['collection_time'] = pd.to_datetime(trades_df['collection_time'])
+trades_df['trade_hour'] = pd.to_datetime(trades_df['trade_hour'])
+
+# Create data directory if it doesn't exist
+os.makedirs('data', exist_ok=True)
+
+# Generate filename with current timestamp
+timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+filename = f'data/darkpool_trades_24h_{timestamp}.csv'
+
+# Save to CSV
+trades_df.to_csv(filename, index=False)
+print(f"\nSaved {len(trades_df)} trades to {filename}")
+
+# Print summary statistics
+print("\nTrade summary by symbol:")
+print(trades_df.groupby('symbol').agg({
+    'size': ['count', 'sum', 'mean'],
+    'premium': ['mean', 'max'],
+    'price_impact_pct': 'mean'
+}).round(2))
+
+print("\nDate range of trades:")
+print(f"Earliest trade: {trades_df['executed_at'].min()}")
+print(f"Latest trade: {trades_df['executed_at'].max()}")
+print(f"Total number of trades: {len(trades_df)}")
+print(f"Total volume: {trades_df['size'].sum():,.0f}")
+
+# Additional time-based analysis
+print("\nHourly trade distribution:")
+hourly_stats = trades_df.groupby(trades_df['executed_at'].dt.hour).agg({
+    'size': ['count', 'sum'],
+    'premium': 'mean'
+}).round(2)
+print(hourly_stats)
 
 class OptionsFlowCollector:
     def __init__(self):

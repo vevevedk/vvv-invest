@@ -12,8 +12,11 @@ DARKPOOL_TICKER_ENDPOINT = "/darkpool"  # Will append /{symbol} in the code
 
 # Options Flow Endpoints
 EXPIRY_BREAKDOWN_ENDPOINT = "/stock/{ticker}/expiry-breakdown"  # Get all expirations for a ticker
-OPTION_CONTRACTS_ENDPOINT = "/stock/{ticker}/option-contracts"  # Get all contracts for a ticker
-OPTION_FLOW_ENDPOINT = "/option-contract/{id}/flow"  # Get flow data for a specific contract
+OPTION_CONTRACTS_ENDPOINT = "/options/contracts/{ticker}"
+OPTION_FLOW_ENDPOINT = "/options/flow/{id}"
+
+# News Endpoint
+NEWS_ENDPOINT = "/news/headlines"
 
 # Request Configuration
 DEFAULT_HEADERS = {
