@@ -237,6 +237,9 @@ class DarkPoolCollector:
             }
             trades = trades.rename(columns=column_mapping)
 
+            # Filter for target symbols only
+            trades = trades[trades['symbol'].isin(SYMBOLS)]
+
             # Convert data types
             trades['price'] = pd.to_numeric(trades['price'], errors='coerce')
             trades['size'] = pd.to_numeric(trades['size'], errors='coerce')
