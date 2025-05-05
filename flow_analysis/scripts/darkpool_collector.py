@@ -207,71 +207,38 @@ class DarkPoolCollector:
         if trades.empty:
             logger.warning("No trades to save - DataFrame is empty")
             return
-            
         try:
             # Ensure database connection is active
             if self.db_conn.closed:
                 logger.info("Database connection closed, reconnecting...")
                 self.connect_db()
-                
             # Start a fresh transaction
             self.db_conn.rollback()  # Clear any failed transaction state
-                
             with self.db_conn.cursor() as cur:
-                # Prepare data for insertion
-                records = trades.to_dict('records')
-                logger.info(f"Preparing to insert {len(records)} trades")
-                
-                # Define columns for insertion
+                # Only keep columns that exist in the table
                 columns = [
                     'tracking_id', 'symbol', 'size', 'price', 'volume',
                     'premium', 'executed_at', 'nbbo_ask', 'nbbo_bid',
                     'market_center', 'sale_cond_codes', 'collection_time'
                 ]
-                
-                # Create the insert query
+                trades = trades[[col for col in columns if col in trades.columns]].copy()
+                # Prepare data for insertion
+                records = trades.to_dict('records')
+                logger.info(f"Preparing to insert {len(records)} trades")
                 insert_query = f"""
                     INSERT INTO {SCHEMA_NAME}.{TABLE_NAME} 
-                    ({', '.join(columns)})
+                    ({', '.join(trades.columns)})
                     VALUES %s
                     ON CONFLICT (tracking_id) DO NOTHING
                 """
-                
-                # Prepare values for insertion
-                values = []
-                for record in records:
-                    try:
-                        value = (
-                            record.get('tracking_id'),
-                            record.get('symbol'),
-                            record.get('size'),
-                            record.get('price'),
-                            record.get('volume'),
-                            record.get('premium'),
-                            record.get('executed_at'),
-                            record.get('nbbo_ask'),
-                            record.get('nbbo_bid'),
-                            record.get('market_center'),
-                            record.get('sale_cond_codes'),
-                            record.get('collection_time')
-                        )
-                        values.append(value)
-                    except Exception as e:
-                        logger.error(f"Error preparing record for insertion: {str(e)}")
-                        logger.error(f"Problematic record: {record}")
-                        continue
-                
+                values = [tuple(record.get(col) for col in trades.columns) for record in records]
                 if not values:
                     logger.error("No valid values prepared for insertion")
                     return
-                
                 try:
                     logger.info(f"Executing insert query with {len(values)} values")
-                    # Execute the insert
                     execute_values(cur, insert_query, values)
                     self.db_conn.commit()
-                    
-                    # Verify the insertion
                     cur.execute(f"SELECT COUNT(*) FROM {SCHEMA_NAME}.{TABLE_NAME}")
                     total_count = cur.fetchone()[0]
                     logger.info(f"Total trades in database after insertion: {total_count}")
@@ -279,15 +246,14 @@ class DarkPoolCollector:
                     logger.error(f"Database error during insertion: {str(e)}")
                     self.db_conn.rollback()
                     raise
-                
         except Exception as e:
             logger.error(f"Error saving trades to database: {str(e)}")
-            if not isinstance(e, psycopg2.Error):  # Only log details if not already logged
+            if not isinstance(e, psycopg2.Error):
                 logger.error(f"Error details: {str(e)}")
             try:
                 self.db_conn.rollback()
             except Exception:
-                pass  # Connection might be closed
+                pass
             raise
             
     def is_market_open(self) -> bool:
