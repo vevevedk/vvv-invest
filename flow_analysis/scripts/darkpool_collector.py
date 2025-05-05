@@ -177,7 +177,7 @@ class DarkPoolCollector:
         while retry_count < max_retries:
             try:
                 self._rate_limit()
-                response = requests.get(endpoint)
+                response = requests.get(endpoint, headers=DEFAULT_HEADERS, timeout=REQUEST_TIMEOUT)
                 response.raise_for_status()
                 try:
                     data = response.json()
@@ -227,34 +227,41 @@ class DarkPoolCollector:
             column_mapping = {
                 'tracking_id': 'tracking_id',
                 'ticker': 'symbol',
-                'executed_at': 'timestamp',
-                'market_center': 'exchange',
-                'sale_cond_codes': 'trade_type'
+                'price': 'price',
+                'size': 'size',
+                'executed_at': 'executed_at',
+                'market_center': 'market_center',
+                'sale_cond_codes': 'sale_cond_codes',
+                'nbbo_ask': 'nbbo_ask',
+                'nbbo_bid': 'nbbo_bid'
             }
             trades = trades.rename(columns=column_mapping)
 
-            # Add dark_pool column
-            trades['dark_pool'] = 'true'
+            # Convert data types
+            trades['price'] = pd.to_numeric(trades['price'], errors='coerce')
+            trades['size'] = pd.to_numeric(trades['size'], errors='coerce')
+            trades['nbbo_ask'] = pd.to_numeric(trades['nbbo_ask'], errors='coerce')
+            trades['nbbo_bid'] = pd.to_numeric(trades['nbbo_bid'], errors='coerce')
+            trades['executed_at'] = pd.to_datetime(trades['executed_at'], errors='coerce')
+
+            # Calculate derived fields
+            trades['premium'] = trades['price'] * trades['size']
+            trades['nbbo_mid'] = (trades['nbbo_ask'] + trades['nbbo_bid']) / 2
 
             # Validate required columns
             required_columns = [
-                'tracking_id', 'symbol', 'price', 'size', 'timestamp',
-                'trade_type', 'exchange', 'dark_pool'
+                'tracking_id', 'symbol', 'price', 'size', 'executed_at',
+                'sale_cond_codes', 'market_center', 'nbbo_ask', 'nbbo_bid',
+                'premium'
             ]
             missing_columns = [col for col in required_columns if col not in trades.columns]
             if missing_columns:
                 raise ValueError(f"Missing required columns: {missing_columns}")
 
-            # Convert data types
-            try:
-                trades['price'] = pd.to_numeric(trades['price'], errors='raise')
-                trades['size'] = pd.to_numeric(trades['size'], errors='raise')
-                trades['timestamp'] = pd.to_datetime(trades['timestamp'], errors='raise')
-            except Exception as e:
-                raise ValueError(f"Error converting data types: {str(e)}")
-
             # Filter out invalid rows
-            trades = trades.dropna(subset=['price', 'size', 'timestamp'])
+            trades = trades.dropna(subset=required_columns)
+            
+            self.logger.info(f"Processed {len(trades)} trades successfully")
             return trades
         except Exception as e:
             self.logger.error(f"Error processing trades: {str(e)}")
@@ -273,26 +280,56 @@ class DarkPoolCollector:
                 if self.db_conn.closed:
                     raise Exception("Failed to reconnect to database")
 
-            # Create table if it doesn't exist
-            create_table_sql = """
-            CREATE TABLE IF NOT EXISTS darkpool_trades (
-                tracking_id TEXT PRIMARY KEY,
-                symbol TEXT NOT NULL,
-                price REAL NOT NULL,
-                size INTEGER NOT NULL,
-                timestamp TIMESTAMP NOT NULL,
-                trade_type TEXT NOT NULL,
-                exchange TEXT NOT NULL,
-                dark_pool TEXT NOT NULL
-            )
-            """
-            self.db_conn.execute(create_table_sql)
-            self.db_conn.commit()
+            with self.db_conn.cursor() as cur:
+                # Create schema if it doesn't exist
+                cur.execute("CREATE SCHEMA IF NOT EXISTS trading;")
+                
+                # Create table if it doesn't exist
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS trading.darkpool_trades (
+                        id SERIAL PRIMARY KEY,
+                        tracking_id TEXT NOT NULL,
+                        symbol TEXT NOT NULL,
+                        price NUMERIC NOT NULL,
+                        size INTEGER NOT NULL,
+                        executed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                        sale_cond_codes TEXT NOT NULL,
+                        market_center TEXT NOT NULL,
+                        nbbo_ask NUMERIC NOT NULL,
+                        nbbo_bid NUMERIC NOT NULL,
+                        premium NUMERIC NOT NULL,
+                        collection_time TIMESTAMP WITH TIME ZONE,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                self.db_conn.commit()
 
-            # Insert trades
-            trades.to_sql('darkpool_trades', self.db_conn, if_exists='append', index=False)
-            self.db_conn.commit()
-            self.logger.info(f"Successfully saved {len(trades)} trades to database")
+                # Add collection time
+                trades['collection_time'] = datetime.now()
+
+                # Prepare data for insertion
+                columns = [
+                    'tracking_id', 'symbol', 'price', 'size', 'executed_at',
+                    'sale_cond_codes', 'market_center', 'nbbo_ask', 'nbbo_bid',
+                    'premium', 'collection_time'
+                ]
+                values = [tuple(row) for row in trades[columns].values]
+
+                # Insert trades using execute_values for better performance
+                execute_values(
+                    cur,
+                    """
+                    INSERT INTO trading.darkpool_trades (
+                        tracking_id, symbol, price, size, executed_at,
+                        sale_cond_codes, market_center, nbbo_ask, nbbo_bid,
+                        premium, collection_time
+                    ) VALUES %s
+                    ON CONFLICT (tracking_id) DO NOTHING
+                    """,
+                    values
+                )
+                self.db_conn.commit()
+                self.logger.info(f"Successfully saved {len(trades)} trades to database")
         except Exception as e:
             if not self.db_conn.closed:
                 self.db_conn.rollback()

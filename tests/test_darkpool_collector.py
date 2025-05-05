@@ -58,7 +58,7 @@ def test_process_trades(collector):
         "size": 100,
         "executed_at": "2025-05-03T09:30:00Z",
         "market_center": "NYSE",
-        "sale_cond_codes": "BUY"
+        "sale_cond_codes": "@"
     }]
     
     result = collector._process_trades(trades_data)
@@ -66,9 +66,8 @@ def test_process_trades(collector):
     assert len(result) == 1
     assert result.iloc[0]["tracking_id"] == "1"
     assert result.iloc[0]["symbol"] == "AAPL"
-    assert result.iloc[0]["exchange"] == "NYSE"
-    assert result.iloc[0]["trade_type"] == "BUY"
-    assert result.iloc[0]["dark_pool"] == "true"
+    assert result.iloc[0]["market_center"] == "NYSE"
+    assert result.iloc[0]["sale_cond_codes"] == "@"
 
 def test_process_trades_edge_cases(collector):
     """Test edge cases in _process_trades method"""
@@ -82,21 +81,17 @@ def test_process_trades_edge_cases(collector):
             "ticker": "AAPL",
             "size": 100,
             "price": 150.0,
-            "volume": 10000,
-            "premium": 15000.0,
             "executed_at": "2025-05-03T09:30:00Z",
             "nbbo_ask": 151.0,
             "nbbo_bid": 149.0,
-            "market_center": "DP",
-            "sale_cond_codes": "DP"
+            "market_center": "L",
+            "sale_cond_codes": "@"
         },
         {
             "tracking_id": "2",  # Missing required fields
             "ticker": "MSFT",
             "size": None,  # Invalid size
             "price": None,  # Invalid price
-            "volume": None,  # Invalid volume
-            "premium": None,  # Invalid premium
             "executed_at": None,  # Invalid execution time
             "nbbo_ask": None,
             "nbbo_bid": None,
@@ -109,7 +104,7 @@ def test_process_trades_edge_cases(collector):
     with patch('flow_analysis.scripts.darkpool_collector.SYMBOLS', []):
         result = collector._process_trades(trades_data)
         # Drop rows with missing required fields
-        result = result.dropna(subset=['size', 'price', 'volume', 'premium', 'executed_at'])
+        result = result.dropna(subset=['size', 'price', 'executed_at'])
         assert not result.empty
         assert len(result) == 1  # Only the valid trade should be included
         assert result.iloc[0]['symbol'] == 'AAPL'
@@ -121,10 +116,12 @@ def test_save_trades_to_db(collector):
         "symbol": "AAPL",
         "price": 100.0,
         "size": 100,
-        "timestamp": datetime.now(),
-        "trade_type": "BUY",
-        "exchange": "NYSE",
-        "dark_pool": "true"
+        "executed_at": datetime.now(),
+        "market_center": "L",
+        "sale_cond_codes": "@",
+        "nbbo_ask": 100.1,
+        "nbbo_bid": 99.9,
+        "premium": 10000.0
     }])
     
     collector.save_trades_to_db(trades)
@@ -146,10 +143,12 @@ def test_save_trades_to_db_error_handling(collector):
                 "symbol": "AAPL",
                 "price": 100.0,
                 "size": 100,
-                "timestamp": datetime.now(),
-                "trade_type": "BUY",
-                "exchange": "NYSE",
-                "dark_pool": "true"
+                "executed_at": datetime.now(),
+                "market_center": "L",
+                "sale_cond_codes": "@",
+                "nbbo_ask": 100.1,
+                "nbbo_bid": 99.9,
+                "premium": 10000.0
             }]))
 
 def test_is_market_open(collector):
@@ -192,10 +191,12 @@ def test_run(collector):
         "symbol": "AAPL",
         "price": 100.0,
         "size": 100,
-        "timestamp": datetime.now(),
-        "trade_type": "BUY",
-        "exchange": "NYSE",
-        "dark_pool": "true"
+        "executed_at": datetime.now(),
+        "market_center": "NYSE",
+        "sale_cond_codes": "@",
+        "nbbo_ask": 100.1,
+        "nbbo_bid": 99.9,
+        "premium": 10000.0
     }]))
     collector.save_trades_to_db = Mock()
     
@@ -568,10 +569,12 @@ def test_save_trades_to_db_error_handling_extended(collector):
                 "symbol": "AAPL",
                 "price": 100.0,
                 "size": 100,
-                "timestamp": datetime.now(),
-                "trade_type": "BUY",
-                "exchange": "NYSE",
-                "dark_pool": "true"
+                "executed_at": datetime.now(),
+                "market_center": "NYSE",
+                "sale_cond_codes": "@",
+                "nbbo_ask": 100.1,
+                "nbbo_bid": 99.9,
+                "premium": 10000.0
             }]))
     
     # Test when table creation fails
@@ -583,8 +586,10 @@ def test_save_trades_to_db_error_handling_extended(collector):
                 "symbol": "AAPL",
                 "price": 100.0,
                 "size": 100,
-                "timestamp": datetime.now(),
-                "trade_type": "BUY",
-                "exchange": "NYSE",
-                "dark_pool": "true"
+                "executed_at": datetime.now(),
+                "market_center": "NYSE",
+                "sale_cond_codes": "@",
+                "nbbo_ask": 100.1,
+                "nbbo_bid": 99.9,
+                "premium": 10000.0
             }])) 
