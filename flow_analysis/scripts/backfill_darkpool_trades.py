@@ -12,6 +12,9 @@ import logging
 from typing import Optional, Dict, List, Any
 import requests
 from requests.exceptions import RequestException
+import argparse
+from dotenv import load_dotenv
+import os
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
@@ -22,11 +25,32 @@ from flow_analysis.config.api_config import (
     DEFAULT_HEADERS, REQUEST_TIMEOUT, REQUEST_RATE_LIMIT
 )
 from flow_analysis.config.watchlist import SYMBOLS
+
+# Parse command-line arguments for env file
+parser = argparse.ArgumentParser()
+parser.add_argument('--env-file', default='.env', help='Path to environment file')
+args = parser.parse_args()
+
+# Load environment variables from the specified file
+load_dotenv(args.env_file)
+
+# Load DB config from environment
+DB_CONFIG = {
+    'dbname': os.getenv('DB_NAME'),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'host': os.getenv('DB_HOST'),
+    'port': os.getenv('DB_PORT'),
+    'sslmode': os.getenv('DB_SSLMODE', 'require')
+}
+
 from flow_analysis.scripts.darkpool_collector import DarkPoolCollector
 
 def backfill_trades(start_time: datetime, end_time: datetime) -> None:
     """Backfill trades between start_time and end_time."""
     collector = DarkPoolCollector()
+    collector.db_conn = None  # Reset connection
+    collector.DB_CONFIG = DB_CONFIG  # Use loaded DB config
     collector.connect_db()
     
     # Set up logging
@@ -73,13 +97,15 @@ def backfill_trades(start_time: datetime, end_time: datetime) -> None:
 
 def main():
     """Main entry point."""
-    # Calculate time range
+    # Set start time to May 2nd, 16:00 UTC
+    start_time = datetime(2025, 5, 2, 16, 0, 0, tzinfo=pytz.UTC)
+    # Set end time to yesterday at 16:00 UTC
     now = datetime.now(pytz.UTC)
-    friday_evening = now - timedelta(days=3)  # Assuming it's Monday
-    friday_evening = friday_evening.replace(hour=16, minute=0, second=0, microsecond=0)
-    
-    print(f"Backfilling trades from {friday_evening} to {now}")
-    backfill_trades(friday_evening, now)
+    yesterday = now - timedelta(days=1)
+    end_time = yesterday.replace(hour=16, minute=0, second=0, microsecond=0)
+
+    print(f"Backfilling trades from {start_time} to {end_time}")
+    backfill_trades(start_time, end_time)
 
 if __name__ == '__main__':
     main() 

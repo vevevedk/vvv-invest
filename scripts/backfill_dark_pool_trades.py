@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 import requests
 from requests.exceptions import RequestException
+import argparse
 
 # Add the project root directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -25,8 +26,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
+# Parse command-line arguments for env file
+parser = argparse.ArgumentParser()
+parser.add_argument('--env-file', default='.env', help='Path to environment file')
+args = parser.parse_args()
+
+# Load environment variables from the specified file
+load_dotenv(args.env_file)
 
 # Database configuration
 DB_USER = os.getenv('DB_USER')
@@ -36,8 +42,8 @@ DB_PORT = os.getenv('DB_PORT')
 DB_NAME = os.getenv('DB_NAME')
 
 # API configuration
-API_KEY = os.getenv('UW_API_TOKEN')
-API_BASE_URL = os.getenv('UW_BASE_URL', 'https://api.unusualwhales.com/api/v1')
+API_KEY = os.getenv('API_KEY')
+API_BASE_URL = os.getenv('API_BASE_URL', 'https://api.unusualwhales.com/api/v1')
 
 # Create database engine
 engine = create_engine(f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}')
