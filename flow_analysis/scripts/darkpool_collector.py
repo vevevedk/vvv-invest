@@ -234,6 +234,14 @@ class DarkPoolCollector:
             initial_count = len(trades)
             self.logger.info(f"Processing {initial_count} trades")
 
+            # Debug logging for QQQ trades
+            qqq_trades = trades[trades['ticker'] == 'QQQ']
+            if not qqq_trades.empty:
+                self.logger.info(f"Found {len(qqq_trades)} QQQ trades in raw data")
+                self.logger.info(f"QQQ trade sample: {qqq_trades.iloc[0].to_dict()}")
+            else:
+                self.logger.warning("No QQQ trades found in raw data")
+
             # Map API column names to our expected column names
             column_mapping = {
                 'tracking_id': 'tracking_id',
@@ -260,6 +268,15 @@ class DarkPoolCollector:
             # Filter for target symbols only
             trades = trades[trades['symbol'].isin(SYMBOLS)]
             self.logger.info(f"After symbol filtering: {len(trades)} trades")
+            
+            # Debug logging for QQQ trades after filtering
+            qqq_trades = trades[trades['symbol'] == 'QQQ']
+            if not qqq_trades.empty:
+                self.logger.info(f"Found {len(qqq_trades)} QQQ trades after filtering")
+                self.logger.info(f"QQQ trade sample after filtering: {qqq_trades.iloc[0].to_dict()}")
+            else:
+                self.logger.warning("No QQQ trades found after filtering")
+
             if len(trades) < initial_count:
                 symbol_counts = trades['symbol'].value_counts()
                 self.logger.info(f"Trades per symbol: {symbol_counts.to_dict()}")
