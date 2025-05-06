@@ -342,6 +342,15 @@ class DarkPoolCollector:
                 if self.db_conn.closed:
                     raise Exception("Failed to reconnect to database")
 
+            # Log trade distribution before saving
+            symbol_counts = trades['symbol'].value_counts()
+            self.logger.info(f"Trades to save by symbol: {symbol_counts.to_dict()}")
+            
+            # Log sample of QQQ trades if any
+            qqq_trades = trades[trades['symbol'] == 'QQQ']
+            if not qqq_trades.empty:
+                self.logger.info(f"Sample QQQ trade to save: {qqq_trades.iloc[0].to_dict()}")
+
             with self.db_conn.cursor() as cur:
                 # Create schema if it doesn't exist
                 cur.execute("CREATE SCHEMA IF NOT EXISTS trading;")
@@ -371,6 +380,7 @@ class DarkPoolCollector:
                     );
                 """)
                 self.db_conn.commit()
+                self.logger.info("Database schema and table verified")
 
                 # Add collection time
                 trades['collection_time'] = datetime.now()
@@ -388,6 +398,10 @@ class DarkPoolCollector:
                 existing_columns = [col for col in columns if col in trades.columns]
                 values = [tuple(row) for row in trades[existing_columns].values]
 
+                # Log the SQL we're about to execute
+                self.logger.info(f"Executing insert with columns: {existing_columns}")
+                self.logger.info(f"Number of rows to insert: {len(values)}")
+
                 # Insert trades using execute_values for better performance
                 execute_values(
                     cur,
@@ -400,19 +414,38 @@ class DarkPoolCollector:
                     values
                 )
                 self.db_conn.commit()
+                
+                # Verify the insert by counting rows
+                cur.execute("""
+                    SELECT symbol, COUNT(*) as count 
+                    FROM trading.darkpool_trades 
+                    WHERE collection_time >= NOW() - INTERVAL '1 minute'
+                    GROUP BY symbol
+                """)
+                recent_counts = dict(cur.fetchall())
+                self.logger.info(f"Recent trades saved by symbol: {recent_counts}")
+                
                 self.logger.info(f"Successfully saved {len(trades)} trades to database")
         except Exception as e:
             if not self.db_conn.closed:
                 self.db_conn.rollback()
             self.logger.error(f"Error saving trades to database: {str(e)}")
+            self.logger.error(f"Error type: {type(e).__name__}")
+            self.logger.error(f"Error details: {str(e)}")
             raise
 
     def is_market_open(self) -> bool:
         """Check if the market is currently open."""
         try:
+            # Get current time in Eastern timezone
             now = datetime.now(self.market_tz)
             current_time = now.time()
             current_date = now.date()
+
+            # Debug logging
+            self.logger.info(f"Current ET time: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            self.logger.info(f"Market open time: {MARKET_OPEN.strftime('%H:%M:%S')}")
+            self.logger.info(f"Market close time: {MARKET_CLOSE.strftime('%H:%M:%S')}")
 
             # Check if it's a weekday
             if now.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
@@ -428,7 +461,9 @@ class DarkPoolCollector:
             is_open = MARKET_OPEN <= current_time < MARKET_CLOSE
             
             if not is_open:
-                self.logger.info(f"Market is closed - current ET time: {now.strftime('%H:%M:%S')}")
+                self.logger.info(f"Market is closed - current ET time: {current_time.strftime('%H:%M:%S')}")
+            else:
+                self.logger.info("Market is open")
             
             return is_open
         except Exception as e:
