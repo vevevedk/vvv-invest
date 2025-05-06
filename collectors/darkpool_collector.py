@@ -12,13 +12,20 @@ class DarkPoolCollector(BaseCollector):
     def __init__(self):
         super().__init__()
         self.ny_tz = pytz.timezone('America/New_York')
+        # Log API token status (first 4 chars only for security)
+        token = DEFAULT_HEADERS.get('Authorization', '').split()[-1]
+        self.logger.info(f"API Token configured: {token[:4]}...")
 
     def is_market_open(self):
         """Check if US stock market is currently open."""
         now = datetime.now(self.ny_tz)
         
+        # Log current time in NY
+        self.logger.info(f"Current NY time: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        
         # Check if it's a weekday
         if now.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
+            self.logger.info("Market is closed: Weekend")
             return False
             
         # Check if it's between 9:30 AM and 4:00 PM ET
@@ -26,12 +33,19 @@ class DarkPoolCollector(BaseCollector):
         market_close = time(16, 0)  # 4:00 PM
         current_time = now.time()
         
-        return market_open <= current_time <= market_close
+        is_open = market_open <= current_time <= market_close
+        if not is_open:
+            self.logger.info(f"Market is closed: Current time {current_time} outside market hours {market_open}-{market_close}")
+        return is_open
 
     def validate_trade(self, trade):
         """Validate trade data before saving."""
         required_fields = ['tracking_id', 'size', 'price', 'executed_at']
-        return all(trade.get(field) for field in required_fields)
+        missing_fields = [field for field in required_fields if not trade.get(field)]
+        if missing_fields:
+            self.logger.debug(f"Invalid trade: Missing fields {missing_fields}")
+            return False
+        return True
 
     def collect(self):
         if not self.is_market_open():
@@ -43,6 +57,7 @@ class DarkPoolCollector(BaseCollector):
         for symbol in SYMBOLS:
             try:
                 url = f"{UW_BASE_URL}{DARKPOOL_RECENT_ENDPOINT}?symbol={symbol}"
+                self.logger.debug(f"Making API request to: {url}")
                 response = requests.get(url, headers=DEFAULT_HEADERS, timeout=REQUEST_TIMEOUT)
                 response.raise_for_status()
                 data = response.json()
@@ -52,8 +67,11 @@ class DarkPoolCollector(BaseCollector):
                     continue
                     
                 trades = data['data']
+                self.logger.debug(f"Received {len(trades)} trades for {symbol}")
+                
                 # Filter out invalid trades
                 valid_trades = [t for t in trades if self.validate_trade(t)]
+                self.logger.debug(f"Found {len(valid_trades)} valid trades for {symbol}")
                 
                 if not valid_trades:
                     self.logger.info(f"No valid trades found for {symbol}")
@@ -63,8 +81,12 @@ class DarkPoolCollector(BaseCollector):
                 total_trades += inserted
                 self.logger.info(f"{inserted} trades saved for {symbol}")
                 
+            except requests.exceptions.RequestException as e:
+                self.logger.error(f"API request error for {symbol}: {str(e)}")
+                if hasattr(e.response, 'text'):
+                    self.logger.error(f"API response: {e.response.text}")
             except Exception as e:
-                self.logger.error(f"Error collecting trades for {symbol}: {e}")
+                self.logger.error(f"Error collecting trades for {symbol}: {str(e)}")
                 
         self.logger.info(f"Dark pool collection complete. Total trades saved: {total_trades}")
 
@@ -104,8 +126,8 @@ class DarkPoolCollector(BaseCollector):
                             })
                             inserted += 1
                         except Exception as e:
-                            self.logger.error(f"DB insert error for {symbol}: {e}")
+                            self.logger.error(f"DB insert error for {symbol}: {str(e)}")
                 conn.commit()
         except Exception as e:
-            self.logger.error(f"DB connection error: {e}")
+            self.logger.error(f"DB connection error: {str(e)}")
         return inserted 
