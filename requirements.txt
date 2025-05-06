@@ -1,7 +1,7 @@
 pandas==2.2.1
 psycopg2-binary==2.9.9
 pytest==8.0.2
-python-dotenv==1.0.1
+python-dotenv==1.0.0
 pytz==2024.1
 requests==2.31.0
 polygon-api-client==1.13.1
@@ -11,4 +11,6 @@ gunicorn==21.2.0
 uvicorn==0.27.1
 python-multipart==0.0.9
 fastapi==0.110.0
-pydantic==2.6.3 
+pydantic==2.6.3
+sqlalchemy==2.0.23
+backoff==2.2.1 
