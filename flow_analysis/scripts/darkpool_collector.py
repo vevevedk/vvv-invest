@@ -28,7 +28,7 @@ from flow_analysis.config.api_config import (
     DEFAULT_HEADERS, REQUEST_TIMEOUT, REQUEST_RATE_LIMIT
 )
 from flow_analysis.config.db_config import DB_CONFIG, SCHEMA_NAME, TABLE_NAME
-from flow_analysis.config.watchlist import MARKET_OPEN, MARKET_CLOSE, SYMBOLS
+from flow_analysis.config.watchlist import MARKET_OPEN, MARKET_CLOSE, SYMBOLS, MARKET_HOLIDAYS
 
 class DatabaseLogHandler(logging.Handler):
     """Custom logging handler that writes logs to the database."""
@@ -166,6 +166,13 @@ class DarkPoolCollector:
         if not isinstance(response_data['data'], list):
             self.logger.error("Invalid response format: 'data' is not a list")
             return False
+            
+        # Log response structure for debugging
+        if response_data['data']:
+            sample_trade = response_data['data'][0]
+            self.logger.info(f"Sample trade keys: {list(sample_trade.keys())}")
+            self.logger.info(f"Sample trade data types: {[(k, type(v)) for k, v in sample_trade.items()]}")
+            
         return True
 
     def _make_request(self, endpoint: str) -> Optional[Dict]:
@@ -221,7 +228,11 @@ class DarkPoolCollector:
         try:
             trades = pd.DataFrame(trades_data)
             if trades.empty:
+                self.logger.info("No trades data received")
                 return trades
+
+            initial_count = len(trades)
+            self.logger.info(f"Processing {initial_count} trades")
 
             # Map API column names to our expected column names
             column_mapping = {
@@ -233,38 +244,51 @@ class DarkPoolCollector:
                 'market_center': 'market_center',
                 'sale_cond_codes': 'sale_cond_codes',
                 'nbbo_ask': 'nbbo_ask',
-                'nbbo_bid': 'nbbo_bid'
+                'nbbo_bid': 'nbbo_bid',
+                'volume': 'volume',
+                'premium': 'premium',
+                'nbbo_ask_quantity': 'nbbo_ask_quantity',
+                'nbbo_bid_quantity': 'nbbo_bid_quantity',
+                'ext_hour_sold_codes': 'ext_hour_sold_codes',
+                'trade_code': 'trade_code',
+                'trade_settlement': 'trade_settlement',
+                'canceled': 'canceled'
             }
             trades = trades.rename(columns=column_mapping)
+            self.logger.info(f"After column mapping: {len(trades)} trades")
 
             # Filter for target symbols only
             trades = trades[trades['symbol'].isin(SYMBOLS)]
+            self.logger.info(f"After symbol filtering: {len(trades)} trades")
+            if len(trades) < initial_count:
+                symbol_counts = trades['symbol'].value_counts()
+                self.logger.info(f"Trades per symbol: {symbol_counts.to_dict()}")
 
             # Convert data types
-            trades['price'] = pd.to_numeric(trades['price'], errors='coerce')
-            trades['size'] = pd.to_numeric(trades['size'], errors='coerce')
-            trades['nbbo_ask'] = pd.to_numeric(trades['nbbo_ask'], errors='coerce')
-            trades['nbbo_bid'] = pd.to_numeric(trades['nbbo_bid'], errors='coerce')
+            numeric_columns = ['price', 'size', 'nbbo_ask', 'nbbo_bid', 'volume', 'premium',
+                             'nbbo_ask_quantity', 'nbbo_bid_quantity']
+            for col in numeric_columns:
+                if col in trades.columns:
+                    trades[col] = pd.to_numeric(trades[col], errors='coerce')
+
             trades['executed_at'] = pd.to_datetime(trades['executed_at'], errors='coerce')
+            if 'canceled' in trades.columns:
+                trades['canceled'] = trades['canceled'].fillna(False)
 
-            # Calculate derived fields
-            trades['premium'] = trades['price'] * trades['size']
-            trades['nbbo_mid'] = (trades['nbbo_ask'] + trades['nbbo_bid']) / 2
+            # Log any NaN values after conversion
+            nan_counts = trades.isna().sum()
+            if nan_counts.any():
+                self.logger.warning(f"NaN values after conversion: {nan_counts[nan_counts > 0].to_dict()}")
 
-            # Validate required columns
-            required_columns = [
-                'tracking_id', 'symbol', 'price', 'size', 'executed_at',
-                'sale_cond_codes', 'market_center', 'nbbo_ask', 'nbbo_bid',
-                'premium'
-            ]
-            missing_columns = [col for col in required_columns if col not in trades.columns]
-            if missing_columns:
-                raise ValueError(f"Missing required columns: {missing_columns}")
+            # Calculate derived fields if not present
+            if 'premium' not in trades.columns:
+                trades['premium'] = trades['price'] * trades['size']
 
-            # Filter out invalid rows
-            trades = trades.dropna(subset=required_columns)
-            
-            self.logger.info(f"Processed {len(trades)} trades successfully")
+            # Log trade statistics
+            self.logger.info(f"Final trade counts by symbol: {trades['symbol'].value_counts().to_dict()}")
+            self.logger.info(f"Average trade size by symbol: {trades.groupby('symbol')['size'].mean().to_dict()}")
+            self.logger.info(f"Average premium by symbol: {trades.groupby('symbol')['premium'].mean().to_dict()}")
+
             return trades
         except Exception as e:
             self.logger.error(f"Error processing trades: {str(e)}")
@@ -291,18 +315,24 @@ class DarkPoolCollector:
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS trading.darkpool_trades (
                         id SERIAL PRIMARY KEY,
-                        tracking_id TEXT NOT NULL,
-                        symbol TEXT NOT NULL,
+                        tracking_id BIGINT NOT NULL UNIQUE,
+                        symbol VARCHAR(10) NOT NULL,
                         price NUMERIC NOT NULL,
                         size INTEGER NOT NULL,
+                        volume NUMERIC,
+                        premium NUMERIC,
                         executed_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                        sale_cond_codes TEXT NOT NULL,
-                        market_center TEXT NOT NULL,
-                        nbbo_ask NUMERIC NOT NULL,
-                        nbbo_bid NUMERIC NOT NULL,
-                        premium NUMERIC NOT NULL,
-                        collection_time TIMESTAMP WITH TIME ZONE,
-                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                        nbbo_ask NUMERIC,
+                        nbbo_bid NUMERIC,
+                        nbbo_ask_quantity INTEGER,
+                        nbbo_bid_quantity INTEGER,
+                        market_center VARCHAR(10),
+                        sale_cond_codes TEXT,
+                        ext_hour_sold_codes TEXT,
+                        trade_code TEXT,
+                        trade_settlement TEXT,
+                        canceled BOOLEAN,
+                        collection_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
                 self.db_conn.commit()
@@ -312,20 +342,23 @@ class DarkPoolCollector:
 
                 # Prepare data for insertion
                 columns = [
-                    'tracking_id', 'symbol', 'price', 'size', 'executed_at',
-                    'sale_cond_codes', 'market_center', 'nbbo_ask', 'nbbo_bid',
-                    'premium', 'collection_time'
+                    'tracking_id', 'symbol', 'price', 'size', 'volume', 'premium',
+                    'executed_at', 'nbbo_ask', 'nbbo_bid', 'nbbo_ask_quantity',
+                    'nbbo_bid_quantity', 'market_center', 'sale_cond_codes',
+                    'ext_hour_sold_codes', 'trade_code', 'trade_settlement',
+                    'canceled', 'collection_time'
                 ]
-                values = [tuple(row) for row in trades[columns].values]
+                
+                # Filter columns that exist in the DataFrame
+                existing_columns = [col for col in columns if col in trades.columns]
+                values = [tuple(row) for row in trades[existing_columns].values]
 
                 # Insert trades using execute_values for better performance
                 execute_values(
                     cur,
-                    """
+                    f"""
                     INSERT INTO trading.darkpool_trades (
-                        tracking_id, symbol, price, size, executed_at,
-                        sale_cond_codes, market_center, nbbo_ask, nbbo_bid,
-                        premium, collection_time
+                        {', '.join(existing_columns)}
                     ) VALUES %s
                     ON CONFLICT (tracking_id) DO NOTHING
                     """,
@@ -344,17 +377,25 @@ class DarkPoolCollector:
         try:
             now = datetime.now(self.market_tz)
             current_time = now.time()
-            current_day = now.weekday()
+            current_date = now.date()
 
             # Check if it's a weekday
-            if current_day >= 5:  # 5 = Saturday, 6 = Sunday
+            if now.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
+                self.logger.info("Market is closed - weekend")
+                return False
+
+            # Check if it's a holiday
+            if current_date in MARKET_HOLIDAYS:
+                self.logger.info("Market is closed - holiday")
                 return False
 
             # Check if current time is within market hours
-            market_open = time(9, 30)  # 9:30 AM
-            market_close = time(16, 0)  # 4:00 PM
-
-            return market_open <= current_time < market_close
+            is_open = MARKET_OPEN <= current_time < MARKET_CLOSE
+            
+            if not is_open:
+                self.logger.info(f"Market is closed - current ET time: {now.strftime('%H:%M:%S')}")
+            
+            return is_open
         except Exception as e:
             self.logger.error(f"Error checking market hours: {str(e)}")
             return False
@@ -364,21 +405,23 @@ class DarkPoolCollector:
         try:
             now = datetime.now(self.market_tz)
             current_time = now.time()
-            current_day = now.weekday()
+            current_date = now.date()
 
             # Start with today's market open time
-            next_open = datetime.combine(now.date(), MARKET_OPEN)
+            next_open = datetime.combine(current_date, MARKET_OPEN)
             next_open = self.market_tz.localize(next_open)
 
-            # If we're past today's market open or it's a weekend,
+            # If we're past today's market open or it's a weekend/holiday,
             # move to the next business day
-            if current_time >= MARKET_OPEN or current_day >= 5:
+            if current_time >= MARKET_OPEN or now.weekday() >= 5 or current_date in MARKET_HOLIDAYS:
                 days_to_add = 1
-                if current_day == 5:  # Saturday
-                    days_to_add = 2
-                elif current_day == 6:  # Sunday
-                    days_to_add = 1
-                next_open += timedelta(days=days_to_add)
+                while True:
+                    next_date = current_date + timedelta(days=days_to_add)
+                    if next_date.weekday() < 5 and next_date not in MARKET_HOLIDAYS:
+                        break
+                    days_to_add += 1
+                next_open = datetime.combine(next_date, MARKET_OPEN)
+                next_open = self.market_tz.localize(next_open)
 
             return next_open
         except Exception as e:
@@ -400,7 +443,7 @@ class DarkPoolCollector:
                     next_open = self.get_next_market_open()
                     wait_time = (next_open - datetime.now(self.market_tz)).total_seconds()
                     self.logger.info(f"Market is closed. Waiting until {next_open} to resume collection")
-                    time_module.sleep(wait_time)
+                    time_module.sleep(min(wait_time, 300))  # Sleep at most 5 minutes between checks
         except KeyboardInterrupt:
             self.logger.info("Collector stopped by user")
         except Exception as e:
@@ -422,11 +465,7 @@ def main():
     try:
         collector = DarkPoolCollector()
         collector.connect_db()
-
-        if args.historical:
-            historical_collect()
-        else:
-            collector.run()
+        collector.run()
     except Exception as e:
         logger.error(f"Fatal error: {str(e)}")
         sys.exit(1)

@@ -21,6 +21,7 @@ OPTION_FLOW_ENDPOINT = "/option-contract/{id}/flow"  # Get flow data for a speci
 EXPIRY_BREAKDOWN_ENDPOINT = "/stock/{ticker}/expiry-breakdown"  # Get expiry dates for a ticker
 NEWS_HEADLINES_ENDPOINT = "/news/headlines"  # Get news headlines
 DARKPOOL_RECENT_ENDPOINT = "/darkpool/recent"  # Get recent dark pool trades
+DARKPOOL_TICKER_ENDPOINT = "/darkpool/{ticker}"  # Get dark pool trades for a specific ticker (up to 500 trades)
 
 # Request Configuration
 DEFAULT_HEADERS = {

@@ -6,8 +6,9 @@ from datetime import datetime, time, timedelta
 import pytz
 import requests
 import pandas as pd
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
+from flow_analysis.config.watchlist import SYMBOLS
 
 # Add parent directory to path to import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -65,9 +66,9 @@ def is_market_open():
     
     return is_open
 
-def fetch_trades(symbol, date_str, limit=200):
+def fetch_trades(symbol, date_str, limit=500):
     """Fetch dark pool trades from the API."""
-    url = f"{UW_BASE_URL}{DARKPOOL_TICKER_ENDPOINT}/{symbol}"
+    url = f"{UW_BASE_URL}{DARKPOOL_TICKER_ENDPOINT.replace('{ticker}', symbol)}"
     
     params = {
         "date": date_str,
@@ -84,7 +85,13 @@ def fetch_trades(symbol, date_str, limit=200):
         logger.info(f"Response content: {response.text[:500]}")  # Log first 500 chars of response
         
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        
+        # Log the number of trades received
+        if data and isinstance(data, dict) and 'data' in data:
+            logger.info(f"Received {len(data['data'])} trades for {symbol}")
+        
+        return data
     except requests.exceptions.RequestException as e:
         logger.error(f"Error fetching trades for {symbol}: {str(e)}")
         logger.error(f"Full error: {str(e.__class__.__name__)}: {str(e)}")
@@ -93,21 +100,47 @@ def fetch_trades(symbol, date_str, limit=200):
 def save_to_database(df, engine):
     """Save trades to the database with deduplication."""
     try:
-        # Convert executed_at to datetime if it's not already
-        if 'executed_at' in df.columns:
-            df['executed_at'] = pd.to_datetime(df['executed_at'])
-        
+        # Create schema if it doesn't exist
+        with engine.connect() as conn:
+            conn.execute(text("CREATE SCHEMA IF NOT EXISTS trading;"))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS trading.darkpool_trades (
+                    id SERIAL PRIMARY KEY,
+                    tracking_id BIGINT NOT NULL UNIQUE,
+                    symbol VARCHAR(10) NOT NULL,
+                    price NUMERIC NOT NULL,
+                    size INTEGER NOT NULL,
+                    volume NUMERIC,
+                    premium NUMERIC,
+                    executed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    nbbo_ask NUMERIC,
+                    nbbo_bid NUMERIC,
+                    nbbo_ask_quantity INTEGER,
+                    nbbo_bid_quantity INTEGER,
+                    market_center VARCHAR(10),
+                    sale_cond_codes TEXT,
+                    ext_hour_sold_codes TEXT,
+                    trade_code TEXT,
+                    trade_settlement TEXT,
+                    canceled BOOLEAN,
+                    collection_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """))
+            conn.commit()
+            
         # Add collection time
         df['collection_time'] = datetime.now()
         
         # Save to database, ignoring duplicates based on tracking_id
         df.to_sql('darkpool_trades', engine, schema='trading', 
                  if_exists='append', index=False, 
-                 method='multi', chunksize=1000)
+                 method='multi', chunksize=100)
         
         logger.info(f"Successfully saved {len(df)} trades to database")
     except Exception as e:
         logger.error(f"Error saving to database: {str(e)}")
+        logger.error(f"Full error: {str(e.__class__.__name__)}: {str(e)}")
+        raise
 
 def get_last_trading_day():
     """Get the most recent trading day."""
@@ -154,19 +187,35 @@ def main():
     else:
         fetch_date = datetime.now().strftime('%Y-%m-%d')
     
-    # Symbols to track
-    symbols = ['SPY', 'QQQ']
-    
-    for symbol in symbols:
+    # Use symbols from config
+    for symbol in SYMBOLS:
         logger.info(f"Fetching trades for {symbol} on {fetch_date}")
-        trades = fetch_trades(symbol, fetch_date)
+        response = fetch_trades(symbol, fetch_date)
         
-        if trades and isinstance(trades, list):
-            df = pd.DataFrame(trades)
-            if not df.empty:
-                save_to_database(df, engine)
+        if response and isinstance(response, dict) and 'data' in response:
+            trades = response['data']
+            if trades and isinstance(trades, list):
+                df = pd.DataFrame(trades)
+                if not df.empty:
+                    # Rename columns to match database schema
+                    if 'ticker' in df.columns:
+                        df = df.rename(columns={'ticker': 'symbol'})
+                    
+                    # Convert data types
+                    df['executed_at'] = pd.to_datetime(df['executed_at'])
+                    df['price'] = pd.to_numeric(df['price'])
+                    df['size'] = pd.to_numeric(df['size'])
+                    df['volume'] = pd.to_numeric(df['volume'])
+                    df['premium'] = pd.to_numeric(df['premium'])
+                    df['nbbo_ask'] = pd.to_numeric(df['nbbo_ask'])
+                    df['nbbo_bid'] = pd.to_numeric(df['nbbo_bid'])
+                    
+                    # Save to database
+                    save_to_database(df, engine)
+                else:
+                    logger.info(f"No new trades found for {symbol}")
             else:
-                logger.info(f"No new trades found for {symbol}")
+                logger.warning(f"Invalid trades data format for {symbol}")
         else:
             logger.warning(f"No valid trades data received for {symbol}")
 
