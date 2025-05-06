@@ -14,6 +14,11 @@ app = Celery(
 )
 
 app.conf.timezone = 'UTC'
+
+# Import and decorate the task
+from collectors.tasks import run_darkpool_collector
+run_darkpool_collector = app.task(run_darkpool_collector)
+
 app.conf.beat_schedule = {
     'run-darkpool-collector-every-5-mins': {
         'task': 'collectors.tasks.run_darkpool_collector',
@@ -21,7 +26,4 @@ app.conf.beat_schedule = {
     },
 }
 
-# Import tasks after app is created
-from collectors.tasks import run_darkpool_collector
-
-app.autodiscover_tasks(['collectors']) 
+# No need for autodiscover since we're explicitly importing the task 
