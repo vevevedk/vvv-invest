@@ -9,7 +9,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # API Configuration
-UW_API_TOKEN = os.getenv('UW_API_TOKEN', '9dd00196-7f7f-4e2c-ad7c-2c2cb6a33999')
+UW_API_TOKEN = os.getenv('UW_API_TOKEN')
+if not UW_API_TOKEN:
+    raise ValueError("UW_API_TOKEN environment variable is not set")
+
 UW_BASE_URL = "https://api.unusualwhales.com/api"  # Base URL for all endpoints
 
 # Endpoints
