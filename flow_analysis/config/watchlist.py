@@ -33,6 +33,20 @@ SYMBOLS = [
     
     # Volatility
     "VIX",  # Volatility Index
+
+    # MAG7 Stocks
+    "AAPL",  # Apple
+    "MSFT",  # Microsoft
+    "GOOGL", # Alphabet (Google)
+    "AMZN",  # Amazon
+    "NVDA",  # Nvidia
+    "META",  # Meta Platforms
+    "TSLA",  # Tesla
+
+    # Growth Stocks
+    "PLTR",  # Palantir
+    "SOFI",  # SoFi Technologies
+    "DUOL",  # Duolingo
 ]
 
 # Analysis Thresholds
