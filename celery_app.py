@@ -15,9 +15,10 @@ app = Celery(
 
 app.conf.timezone = 'UTC'
 
-# Import and decorate the task
-from collectors.tasks import run_darkpool_collector
+# Import and decorate the tasks
+from collectors.tasks import run_darkpool_collector, backfill_qqq_trades
 run_darkpool_collector = app.task(run_darkpool_collector)
+backfill_qqq_trades = app.task(backfill_qqq_trades)
 
 app.conf.beat_schedule = {
     'run-darkpool-collector-every-5-mins': {
