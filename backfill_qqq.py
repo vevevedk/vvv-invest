@@ -1,7 +1,19 @@
 from datetime import datetime, timedelta
 import pytz
-from flow_analysis.scripts.darkpool_collector import DarkPoolCollector
 import time
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env.prod file
+load_dotenv('.env.prod')
+
+# Verify required environment variables
+required_vars = ['UW_API_TOKEN', 'DB_USER', 'DB_PASSWORD', 'DB_HOST', 'DB_PORT', 'DB_NAME']
+missing_vars = [var for var in required_vars if not os.getenv(var)]
+if missing_vars:
+    raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
+from flow_analysis.scripts.darkpool_collector import DarkPoolCollector
 
 def main():
     collector = DarkPoolCollector()
