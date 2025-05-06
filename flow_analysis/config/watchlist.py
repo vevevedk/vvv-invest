@@ -25,28 +25,9 @@ MARKET_HOLIDAYS = [
 
 # Target Symbols
 SYMBOLS = [
-    # Core Market ETFs
     "SPY",  # S&P 500 ETF
     "QQQ",  # Nasdaq 100 ETF
-    "IWM",  # Russell 2000 ETF
-    "DIA",  # Dow Jones ETF
-    
-    # Volatility
-    "VIX",  # Volatility Index
-
-    # MAG7 Stocks
-    "AAPL",  # Apple
-    "MSFT",  # Microsoft
-    "GOOGL", # Alphabet (Google)
-    "AMZN",  # Amazon
-    "NVDA",  # Nvidia
-    "META",  # Meta Platforms
-    "TSLA",  # Tesla
-
-    # Growth Stocks
-    "PLTR",  # Palantir
-    "SOFI",  # SoFi Technologies
-    "DUOL",  # Duolingo
+    "GLD",  # Gold ETF
 ]
 
 # Analysis Thresholds
