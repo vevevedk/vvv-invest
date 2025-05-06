@@ -184,10 +184,21 @@ class DarkPoolCollector:
         while retry_count < max_retries:
             try:
                 self._rate_limit()
+                self.logger.info(f"Making request to: {endpoint}")
                 response = requests.get(endpoint, headers=DEFAULT_HEADERS, timeout=REQUEST_TIMEOUT)
                 response.raise_for_status()
                 try:
                     data = response.json()
+                    # Log the first few trades to see what we're getting
+                    if data and 'data' in data and data['data']:
+                        self.logger.info(f"API Response - Total trades: {len(data['data'])}")
+                        self.logger.info(f"First 5 trades tickers: {[t.get('ticker') for t in data['data'][:5]]}")
+                        # Count trades by ticker
+                        ticker_counts = {}
+                        for trade in data['data']:
+                            ticker = trade.get('ticker')
+                            ticker_counts[ticker] = ticker_counts.get(ticker, 0) + 1
+                        self.logger.info(f"Trades by ticker: {ticker_counts}")
                 except ValueError as e:
                     self.logger.error(f"Invalid JSON response: {str(e)}")
                     return None
@@ -210,6 +221,7 @@ class DarkPoolCollector:
         """Collect recent dark pool trades."""
         try:
             endpoint = f"{UW_BASE_URL}{DARKPOOL_RECENT_ENDPOINT}"
+            self.logger.info(f"Collecting trades from endpoint: {endpoint}")
             response = self._make_request(endpoint)
             
             if response is None or not response.get('data'):
@@ -218,6 +230,12 @@ class DarkPoolCollector:
             
             trades = self._process_trades(response['data'])
             self.logger.info(f"Collected {len(trades)} trades")
+            
+            # Log symbol distribution
+            if not trades.empty:
+                symbol_counts = trades['symbol'].value_counts()
+                self.logger.info(f"Final trade distribution by symbol: {symbol_counts.to_dict()}")
+            
             return trades
         except Exception as e:
             self.logger.error(f"Error collecting trades: {str(e)}")
