@@ -1,4 +1,11 @@
+import os
+import sys
 from celery import Celery
+
+# Add the current directory to Python path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
 
 app = Celery(
     'collectors',
@@ -13,5 +20,8 @@ app.conf.beat_schedule = {
         'schedule': 300.0,  # every 5 minutes
     },
 }
+
+# Import tasks after app is created
+from collectors.tasks import run_darkpool_collector
 
 app.autodiscover_tasks(['collectors']) 
