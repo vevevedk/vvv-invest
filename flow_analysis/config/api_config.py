@@ -16,20 +16,24 @@ if not UW_API_TOKEN:
 UW_BASE_URL = "https://api.unusualwhales.com/api"  # Base URL for all endpoints
 
 # Endpoints
-OPTION_CONTRACTS_ENDPOINT = "/stock/{ticker}/option-contracts"  # Get all option contracts for a ticker
-OPTION_FLOW_ENDPOINT = "/option-contract/{id}/flow"  # Get flow data for a specific contract
-EXPIRY_BREAKDOWN_ENDPOINT = "/stock/{ticker}/expiry-breakdown"  # Get expiry dates for a ticker
-NEWS_HEADLINES_ENDPOINT = "/news/headlines"  # Get news headlines
+# Options Flow Endpoints
+EXPIRY_BREAKDOWN_ENDPOINT = "/stock/{ticker}/expiry-breakdown"  # Get all expirations for a ticker
+OPTION_CONTRACTS_ENDPOINT = "/options/contracts/{ticker}"  # Get all option contracts for a ticker
+OPTION_FLOW_ENDPOINT = "/options/flow/{id}"  # Get flow data for a specific contract
+
+# News Endpoints
+NEWS_ENDPOINT = "/news/headlines"  # Get news headlines
+
+# Dark Pool Endpoints
 DARKPOOL_RECENT_ENDPOINT = "/darkpool/recent"  # Get recent dark pool trades
-DARKPOOL_TICKER_ENDPOINT = "/darkpool/{ticker}"  # Get dark pool trades for a specific ticker (up to 500 trades)
+DARKPOOL_TICKER_ENDPOINT = "/darkpool/{ticker}"  # Get dark pool trades for a specific ticker
 
 # Request Configuration
 DEFAULT_HEADERS = {
-    "Accept": "application/json",
-    "Content-Type": "application/json",
-    "Authorization": f"Bearer {UW_API_TOKEN}"
+    "Authorization": f"Bearer {UW_API_TOKEN}",
+    "Content-Type": "application/json"
 }
 
-# Rate Limiting
-REQUEST_RATE_LIMIT = 2  # requests per second (reduced from 10 to avoid 429 errors)
-REQUEST_TIMEOUT = 30  # seconds 
+# Rate limiting and timeout settings
+REQUEST_TIMEOUT = 30  # seconds
+REQUEST_RATE_LIMIT = 1.0  # requests per second 

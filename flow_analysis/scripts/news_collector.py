@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 from pathlib import Path
 import pytz
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 import psycopg2
 from psycopg2.extras import execute_values
 import requests
@@ -26,8 +26,7 @@ project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 from config.api_config import (
-    UW_API_TOKEN, UW_BASE_URL, 
-    NEWS_HEADLINES_ENDPOINT,
+    UW_API_TOKEN, UW_BASE_URL, NEWS_ENDPOINT,
     DEFAULT_HEADERS, REQUEST_TIMEOUT, REQUEST_RATE_LIMIT
 )
 from config.db_config import DB_CONFIG, SCHEMA_NAME
@@ -48,8 +47,9 @@ logging.basicConfig(
     handlers=[
         RotatingFileHandler(
             log_file,
-            maxBytes=5*1024*1024,  # 5MB
-            backupCount=5
+            maxBytes=10*1024*1024,  # 10MB
+            backupCount=5,
+            encoding='utf-8'
         ),
         logging.StreamHandler()
     ]
@@ -57,15 +57,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class NewsCollector:
+    """Collect and process news headlines from the API."""
+    
     def __init__(self):
+        """Initialize the collector."""
         self.base_url = UW_BASE_URL
-        self.headers = DEFAULT_HEADERS
-        self.last_request_time = 0
         self.eastern = pytz.timezone('US/Eastern')
-        
-        # Initialize database connection
         self.db_conn = None
         self.connect_db()
+        
+        # Initialize duplicate detection
+        self.seen_headlines = set()
+        self._load_seen_headlines()
         
     def connect_db(self):
         """Establish database connection"""
@@ -73,145 +76,261 @@ class NewsCollector:
             self.db_conn = psycopg2.connect(**DB_CONFIG)
             logger.info("Successfully connected to database")
         except Exception as e:
-            logger.error(f"Failed to connect to database: {str(e)}")
+            logger.error(f"Error connecting to database: {str(e)}")
             raise
-            
-    def _rate_limit(self):
-        """Implement rate limiting to prevent API throttling"""
-        current_time = time.time()
-        time_since_last_request = current_time - self.last_request_time
-        if time_since_last_request < 1.0 / REQUEST_RATE_LIMIT:
-            time.sleep(1.0 / REQUEST_RATE_LIMIT - time_since_last_request)
-        self.last_request_time = time.time()
-        
+
     def _make_request(self, endpoint: str, params: Optional[Dict] = None) -> Optional[Dict]:
-        """Make an API request with retry logic"""
+        """Make an API request with retry logic."""
         max_retries = 3
-        for attempt in range(max_retries):
+        retry_count = 0
+        backoff_time = 1.0  # Initial backoff time in seconds
+        
+        while retry_count < max_retries:
             try:
-                self._rate_limit()
+                time.sleep(REQUEST_RATE_LIMIT)  # Rate limiting
                 response = requests.get(
                     endpoint,
-                    headers=self.headers,
+                    headers=DEFAULT_HEADERS,
                     params=params,
                     timeout=REQUEST_TIMEOUT
                 )
                 response.raise_for_status()
                 return response.json()
             except requests.exceptions.RequestException as e:
-                logger.error(f"Request failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
-                if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)  # Exponential backoff
-                else:
+                retry_count += 1
+                if retry_count == max_retries:
                     logger.error(f"Max retries reached for endpoint: {endpoint}")
                     return None
-
-    def is_market_open(self) -> bool:
-        """Check if the market is currently open"""
-        now = datetime.now(self.eastern)
-        
-        # Check if it's a weekday
-        if now.weekday() >= 5:  # 5 is Saturday, 6 is Sunday
-            return False
+                logger.warning(f"Request failed (attempt {retry_count}/{max_retries}): {str(e)}")
+                time.sleep(backoff_time)
+                backoff_time *= 2  # Exponential backoff
+            except Exception as e:
+                logger.error(f"Unexpected error during request: {str(e)}")
+                return None
+                     
+    def _load_seen_headlines(self):
+        """Load previously seen headlines from database"""
+        try:
+            with self.db_conn.cursor() as cur:
+                cur.execute(f"""
+                    SELECT headline, published_at
+                    FROM {SCHEMA_NAME}.news_headlines
+                    WHERE collected_at >= NOW() - INTERVAL '24 hours'
+                """)
+                for row in cur.fetchall():
+                    self.seen_headlines.add((row[0], row[1]))
+        except Exception as e:
+            logger.error(f"Error loading seen headlines: {str(e)}")
             
-        # Create datetime objects for market hours comparison
-        market_open = datetime.strptime(MARKET_OPEN, "%H:%M").time()
-        market_close = datetime.strptime(MARKET_CLOSE, "%H:%M").time()
-        current_time = now.time()
+    def _analyze_sentiment(self, headline: str) -> float:
+        """Analyze sentiment of a news headline"""
+        # Simple sentiment analysis based on keywords
+        positive_words = {'up', 'rise', 'gain', 'bullish', 'positive', 'strong', 'beat', 'surge'}
+        negative_words = {'down', 'fall', 'drop', 'bearish', 'negative', 'weak', 'miss', 'plunge'}
         
-        return market_open <= current_time <= market_close
-
+        words = set(headline.lower().split())
+        positive_count = len(words & positive_words)
+        negative_count = len(words & negative_words)
+        
+        if positive_count + negative_count == 0:
+            return 0.0
+            
+        return (positive_count - negative_count) / (positive_count + negative_count)
+        
+    def _calculate_impact_score(self, headline: str, sentiment: float) -> int:
+        """Calculate impact score for a news headline"""
+        # Base score from sentiment
+        base_score = abs(sentiment) * 5
+        
+        # Keywords that indicate high impact
+        high_impact_words = {
+            'earnings', 'guidance', 'upgrade', 'downgrade', 'initiate',
+            'target', 'price', 'rating', 'analyst', 'report'
+        }
+        
+        words = set(headline.lower().split())
+        impact_multiplier = 1 + (len(words & high_impact_words) * 0.5)
+        
+        return int(base_score * impact_multiplier)
+        
+    def _process_news(self, news_data: List[Dict]) -> pd.DataFrame:
+        """Process raw news data into a DataFrame"""
+        if not news_data:
+            logger.warning("No news data received from API")
+            return pd.DataFrame()
+            
+        logger.info(f"Received {len(news_data)} news items from API")
+        
+        # Convert to DataFrame
+        news = pd.DataFrame(news_data)
+        
+        # Add collection timestamp
+        news['collected_at'] = datetime.now(self.eastern)
+        
+        # Ensure required columns exist
+        required_columns = [
+            'headline', 'source', 'published_at', 'symbols',
+            'sentiment', 'impact_score', 'collected_at'
+        ]
+        
+        # Create missing columns if they don't exist
+        for col in required_columns:
+            if col not in news.columns:
+                news[col] = None
+                
+        # Analyze sentiment and impact for each headline
+        for idx, row in news.iterrows():
+            if pd.isna(row['sentiment']):
+                news.at[idx, 'sentiment'] = self._analyze_sentiment(row['headline'])
+            if pd.isna(row['impact_score']):
+                news.at[idx, 'impact_score'] = self._calculate_impact_score(
+                    row['headline'],
+                    news.at[idx, 'sentiment']
+                )
+                
+        # Filter out duplicates
+        before_dedup = len(news)
+        news = news[~news.apply(
+            lambda x: (x['headline'], x['published_at']) in self.seen_headlines,
+            axis=1
+        )]
+        
+        # Update seen headlines
+        for _, row in news.iterrows():
+            self.seen_headlines.add((row['headline'], row['published_at']))
+            
+        logger.info(f"Removed {before_dedup - len(news)} duplicate news items")
+        return news[required_columns]
+        
     def collect_news(self) -> pd.DataFrame:
-        """Collect news headlines from the API"""
-        endpoint = f"{self.base_url}{NEWS_HEADLINES_ENDPOINT}"
+        """Collect the latest news headlines"""
+        endpoint = f"{self.base_url}{NEWS_ENDPOINT}"
         
         params = {
-            "limit": 100,  # Maximum allowed
-            "major_only": True,  # Focus on significant news
-            "sources": "Reuters,Bloomberg,CNBC"  # Major financial news sources
+            "limit": 100,  # Maximum allowed per request
+            "symbols": SYMBOLS  # Filter by our watchlist
         }
         
         data = self._make_request(endpoint, params)
-        if not data or "data" not in data:
-            logger.warning("No valid news data received")
-            return pd.DataFrame()
-            
-        # Convert to DataFrame
-        news_df = pd.DataFrame(data["data"])
+        if data and "data" in data:
+            return self._process_news(data["data"])
+        return pd.DataFrame()
         
-        if news_df.empty:
-            logger.info("No new headlines collected")
-            return news_df
-            
-        # Add collection timestamp
-        news_df['collected_at'] = datetime.now(self.eastern)
-        
-        # Convert published_at to datetime
-        news_df['published_at'] = pd.to_datetime(news_df['created_at'])
-        
-        # Filter for our watchlist symbols
-        news_df = news_df[news_df['tickers'].apply(lambda x: any(symbol in x for symbol in SYMBOLS))]
-        
-        logger.info(f"Collected {len(news_df)} relevant news headlines")
-        return news_df
-
-    def save_news_to_db(self, news_df: pd.DataFrame) -> None:
-        """Save news headlines to database"""
-        if news_df.empty:
+    def save_news_to_db(self, news: pd.DataFrame) -> None:
+        """Save news headlines to PostgreSQL database"""
+        if news.empty:
+            logger.warning("No news to save - DataFrame is empty")
             return
             
         try:
+            # Ensure database connection is active
+            if self.db_conn.closed:
+                logger.info("Database connection closed, reconnecting...")
+                self.connect_db()
+                
+            # Start a fresh transaction
+            self.db_conn.rollback()
+                
             with self.db_conn.cursor() as cur:
                 # Prepare data for insertion
-                data = news_df[[
-                    'headline', 'source', 'published_at', 'tickers',
-                    'sentiment', 'is_major', 'tags', 'meta', 'collected_at'
-                ]].values.tolist()
+                records = news.to_dict('records')
+                logger.info(f"Preparing to insert {len(records)} news items")
                 
-                # Insert data in batches
-                for i in range(0, len(data), BATCH_SIZE):
-                    batch = data[i:i + BATCH_SIZE]
-                    execute_values(
-                        cur,
-                        f"""
-                        INSERT INTO {SCHEMA_NAME}.news_headlines 
-                        (headline, source, published_at, symbols, sentiment, 
-                         is_major, tags, meta, collected_at)
-                        VALUES %s
-                        ON CONFLICT DO NOTHING
-                        """,
-                        batch
-                    )
+                # Create the insert query
+                insert_query = f"""
+                    INSERT INTO {SCHEMA_NAME}.news_headlines (
+                        headline, source, published_at, symbols,
+                        sentiment, impact_score, collected_at
+                    ) VALUES %s
+                    ON CONFLICT (headline, published_at) DO NOTHING
+                """
+                
+                # Prepare values for insertion
+                values = []
+                for record in records:
+                    try:
+                        value = (
+                            record.get('headline'),
+                            record.get('source'),
+                            record.get('published_at'),
+                            record.get('symbols'),
+                            record.get('sentiment'),
+                            record.get('impact_score'),
+                            record.get('collected_at')
+                        )
+                        values.append(value)
+                    except Exception as e:
+                        logger.error(f"Error preparing record for insertion: {str(e)}")
+                        logger.error(f"Problematic record: {record}")
+                        continue
+                
+                if not values:
+                    logger.error("No valid values prepared for insertion")
+                    return
+                
+                try:
+                    logger.info(f"Executing insert query with {len(values)} values")
+                    # Execute the insert
+                    execute_values(cur, insert_query, values)
+                    self.db_conn.commit()
                     
-                self.db_conn.commit()
-                logger.info(f"Successfully saved {len(news_df)} news headlines to database")
+                    # Verify the insertion
+                    cur.execute(f"SELECT COUNT(*) FROM {SCHEMA_NAME}.news_headlines")
+                    total_count = cur.fetchone()[0]
+                    logger.info(f"Total news items in database after insertion: {total_count}")
+                except psycopg2.Error as e:
+                    logger.error(f"Database error during insertion: {str(e)}")
+                    self.db_conn.rollback()
+                    raise
                 
         except Exception as e:
             logger.error(f"Error saving news to database: {str(e)}")
-            self.db_conn.rollback()
+            if not isinstance(e, psycopg2.Error):
+                logger.error(f"Error details: {str(e)}")
+            try:
+                self.db_conn.rollback()
+            except Exception:
+                pass
             raise
-
+            
+    def is_market_open(self) -> bool:
+        """Check if the market is currently open"""
+        current_time = datetime.now(self.eastern)
+        
+        # Check if it's a weekday
+        if current_time.weekday() >= 5:
+            return False
+            
+        # Parse market hours
+        market_open = current_time.replace(
+            hour=int(MARKET_OPEN.split(':')[0]),
+            minute=int(MARKET_OPEN.split(':')[1]),
+            second=0,
+            microsecond=0
+        )
+        market_close = current_time.replace(
+            hour=int(MARKET_CLOSE.split(':')[0]),
+            minute=int(MARKET_CLOSE.split(':')[1]),
+            second=0,
+            microsecond=0
+        )
+        
+        return market_open <= current_time <= market_close
+        
     def run(self):
         """Run one collection cycle"""
-        # Log market status but collect news regardless
-        if not self.is_market_open():
-            logger.info("Market is closed, but collecting news anyway")
-        else:
-            logger.info("Market is open")
-            
-        logger.info("Starting news collection")
+        logger.info("Starting news collection...")
         start_time = time.time()
         
-        try:
-            news_df = self.collect_news()
-            if not news_df.empty:
-                self.save_news_to_db(news_df)
-                
-        except Exception as e:
-            logger.error(f"Error during collection cycle: {str(e)}")
-            
-        duration = time.time() - start_time
-        logger.info(f"Collection cycle completed in {duration:.2f} seconds")
+        news = self.collect_news()
+        if not news.empty:
+            self.save_news_to_db(news)
+            logger.info(f"Collected and saved {len(news)} news items")
+        else:
+            logger.info("No new news items collected")
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        logger.info(f"Collection cycle completed in {duration_ms}ms")
 
     def __del__(self):
         """Clean up database connection"""
@@ -221,11 +340,35 @@ class NewsCollector:
 def main():
     parser = argparse.ArgumentParser(description='News Headlines Collector')
     parser.add_argument('--continuous', action='store_true', help='Run continuously during market hours')
+    parser.add_argument('--historical', action='store_true', help='Fetch historical data')
     args = parser.parse_args()
-
+    
     collector = NewsCollector()
     
-    if args.continuous:
+    if args.historical:
+        # Override collect_news method temporarily for historical data
+        def historical_collect():
+            endpoint = f"{collector.base_url}{NEWS_ENDPOINT}"
+            params = {
+                "limit": 100,
+                "symbols": SYMBOLS,
+                "start_date": "2025-04-17",  # Example historical date
+                "end_date": "2025-04-17"
+            }
+            logger.info("Fetching historical news data")
+            data = collector._make_request(endpoint, params)
+            if data and "data" in data:
+                return collector._process_news(data["data"])
+            return pd.DataFrame()
+        
+        # Collect and save historical data once
+        news = historical_collect()
+        if not news.empty:
+            collector.save_news_to_db(news)
+            logger.info("Historical data collection complete")
+        else:
+            logger.warning("No historical news items collected")
+    elif args.continuous:
         logger.info("Starting continuous collection mode")
         while True:
             collector.run()
@@ -234,5 +377,5 @@ def main():
         # Single collection cycle
         collector.run()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main() 

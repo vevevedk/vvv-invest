@@ -1,15 +1,17 @@
 -- Create news headlines table
 CREATE TABLE IF NOT EXISTS trading.news_headlines (
     id SERIAL PRIMARY KEY,
-    headline TEXT,
-    source VARCHAR(100),
-    published_at TIMESTAMP WITH TIME ZONE,
-    symbols TEXT[],
-    sentiment VARCHAR(20),
+    headline TEXT NOT NULL,
+    source VARCHAR(100) NOT NULL,
+    published_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    symbols TEXT[] NOT NULL,
+    sentiment DECIMAL(10,4),
+    impact_score INTEGER,
     is_major BOOLEAN,
     tags TEXT[],
     meta JSONB,
-    collected_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    collected_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (headline, published_at)
 );
 
 -- Create news sentiment metrics table
@@ -26,13 +28,20 @@ CREATE TABLE IF NOT EXISTS trading.news_sentiment (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create indexes
-CREATE INDEX IF NOT EXISTS idx_news_headlines_lookup ON trading.news_headlines(symbols, published_at);
+-- Create indexes for efficient querying
+CREATE INDEX IF NOT EXISTS idx_news_symbols ON trading.news_headlines USING GIN(symbols);
+CREATE INDEX IF NOT EXISTS idx_news_published ON trading.news_headlines (published_at);
+CREATE INDEX IF NOT EXISTS idx_news_collected ON trading.news_headlines (collected_at);
 CREATE INDEX IF NOT EXISTS idx_news_sentiment_lookup ON trading.news_sentiment(symbol, timestamp, interval);
 
--- Add unique constraint to prevent duplicate headlines
-ALTER TABLE trading.news_headlines ADD CONSTRAINT unique_headline 
-UNIQUE (headline, published_at, source);
+-- Add comments for documentation
+COMMENT ON TABLE trading.news_headlines IS 'Stores news headlines with sentiment and impact analysis';
+COMMENT ON COLUMN trading.news_headlines.sentiment IS 'Sentiment score from -1.0 (negative) to 1.0 (positive)';
+COMMENT ON COLUMN trading.news_headlines.impact_score IS 'Impact score from 1 (low) to 10 (high)';
+COMMENT ON TABLE trading.news_sentiment IS 'Aggregated sentiment metrics for news headlines';
 
--- Note: Removed foreign key constraint as it's not appropriate for this relationship
--- The news_sentiment table aggregates data and doesn't need a direct foreign key 
+-- Grant necessary permissions
+GRANT SELECT, INSERT ON trading.news_headlines TO collector;
+GRANT SELECT, INSERT ON trading.news_sentiment TO collector;
+GRANT USAGE ON SEQUENCE trading.news_headlines_id_seq TO collector;
+GRANT USAGE ON SEQUENCE trading.news_sentiment_id_seq TO collector;
