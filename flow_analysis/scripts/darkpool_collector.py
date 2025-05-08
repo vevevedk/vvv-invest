@@ -30,6 +30,16 @@ from flow_analysis.config.api_config import (
 from flow_analysis.config.db_config import DB_CONFIG, SCHEMA_NAME, TABLE_NAME
 from flow_analysis.config.watchlist import MARKET_OPEN, MARKET_CLOSE, SYMBOLS, MARKET_HOLIDAYS
 
+# Update DB_CONFIG to use production settings
+DB_CONFIG = {
+    'dbname': 'defaultdb',
+    'user': 'doadmin',
+    'password': 'AVNS_SrG4Bo3B7uCNEPONkE4',
+    'host': 'vvv-trading-db-do-user-2110609-0.i.db.ondigitalocean.com',
+    'port': '25060',
+    'sslmode': 'require'  # Force SSL mode for production
+}
+
 class DatabaseLogHandler(logging.Handler):
     """Custom logging handler that writes logs to the database."""
     

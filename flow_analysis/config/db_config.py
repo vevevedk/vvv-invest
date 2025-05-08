@@ -9,12 +9,12 @@ load_dotenv()
 
 # Database configuration
 DB_CONFIG = {
-    'dbname': os.getenv('DB_NAME'),
-    'user': os.getenv('DB_USER'),
-    'password': os.getenv('DB_PASSWORD'),
-    'host': os.getenv('DB_HOST'),
-    'port': os.getenv('DB_PORT'),
-    'sslmode': os.getenv('DB_SSL_MODE', 'disable')  # Default to disable for local development
+    'dbname': os.getenv('DB_NAME', 'defaultdb'),
+    'user': os.getenv('DB_USER', 'doadmin'),
+    'password': os.getenv('DB_PASSWORD', 'AVNS_SrG4Bo3B7uCNEPONkE4'),
+    'host': os.getenv('DB_HOST', 'vvv-trading-db-do-user-21110609-0.i.db.ondigitalocean.com'),
+    'port': os.getenv('DB_PORT', '25060'),
+    'sslmode': 'require'  # Force SSL mode for production
 }
 
 # Schema and table configuration
