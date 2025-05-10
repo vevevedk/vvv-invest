@@ -19,17 +19,23 @@ def create_news_tables():
         conn = psycopg2.connect(**DB_CONFIG)
         cur = conn.cursor()
         
+        # Drop existing table
+        cur.execute("DROP TABLE IF EXISTS trading.news_headlines CASCADE;")
+        
         # Create the table
         cur.execute("""
             CREATE TABLE IF NOT EXISTS trading.news_headlines (
                 id SERIAL PRIMARY KEY,
                 headline TEXT NOT NULL,
                 source VARCHAR(100) NOT NULL,
-                published_at TIMESTAMP NOT NULL,
+                published_at TIMESTAMP WITH TIME ZONE NOT NULL,
                 symbols TEXT[] NOT NULL,
                 sentiment DECIMAL(10,4),
                 impact_score INTEGER,
-                collected_at TIMESTAMP NOT NULL,
+                is_major BOOLEAN,
+                tags TEXT[],
+                meta JSONB,
+                collected_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE (headline, published_at)
             );
         """)

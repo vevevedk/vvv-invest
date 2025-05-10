@@ -1,8 +1,14 @@
+import os
+import sys
+import unittest
+
+# Add the current directory to the Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import pytest
 import pandas as pd
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
-from flow_analysis.scripts.options_flow_collector import OptionsFlowCollector
 import requests
 import pytz
 

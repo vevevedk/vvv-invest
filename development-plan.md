@@ -15,6 +15,8 @@ Implement a Python-based system to collect and analyze dark pool trades and news
    
    - News Headlines Collector (New Priority)
      - Collects news headlines from UW API
+     - Implements ticker-specific watchlist (SPY, QQQ, GLD)
+     - Optimizes API usage with focused filtering
      - Tracks market-moving news
      - Integrates with existing database
      - Low API usage footprint
@@ -38,6 +40,10 @@ Implement a Python-based system to collect and analyze dark pool trades and news
    - News sentiment correlation
    - Signal generation for SPY/QQQ
    - Real-time alerts
+   - Integrated signal processor combining:
+     - Dark pool data (institutional activity)
+     - News sentiment (market context)
+     - Options flow (directional bets)
 
 4. **Local Analysis Environment**
    - Jupyter notebooks for analysis
@@ -62,13 +68,15 @@ Implement a Python-based system to collect and analyze dark pool trades and news
 
 ### Phase 2: News Headlines Integration (Next Priority)
 1. **Data Collection**
-   - [ ] Implement news headlines collector
-   - [ ] Design efficient API usage pattern
-   - [ ] Set up data validation
-   - [ ] Add monitoring capabilities
+   - [x] Implement news headlines collector
+   - [x] Design efficient API usage pattern
+   - [x] Set up data validation
+   - [x] Add monitoring capabilities
+   - [ ] Implement ticker-specific watchlist filtering
+   - [ ] Optimize API calls for focused data collection
 
 2. **Database Extension**
-   - [ ] Design schema for news data:
+   - [x] Design schema for news data:
      ```sql
      CREATE TABLE news_headlines (
          id SERIAL PRIMARY KEY,
@@ -89,6 +97,7 @@ Implement a Python-based system to collect and analyze dark pool trades and news
    - [ ] Correlate with dark pool activity
    - [ ] Implement sentiment analysis
    - [ ] Set up alert system
+   - [ ] Develop integrated signal processor
 
 ### Phase 3: Options Flow Integration (Current Priority)
 1. **Prerequisites**
@@ -102,6 +111,19 @@ Implement a Python-based system to collect and analyze dark pool trades and news
    - [ ] Create correlation analysis tools
    - [ ] Implement real-time sentiment tracking
    - [ ] Set up market direction indicators
+   - [ ] Develop decision matrix for combined signals:
+     ```
+     Dark Pool | News Sentiment | Options Flow | Signal      | Action
+     ----------|---------------|--------------|-------------|------------------
+     Bullish   | Bullish       | Bullish      | Strong Buy  | Increase position
+     Bullish   | Bullish       | Bearish      | Cautious    | Maintain + hedge
+     Bullish   | Bearish       | Bullish      | Neutral     | Maintain current
+     Bullish   | Bearish       | Bearish      | Cautious    | Reduce position
+     Bearish   | Bullish       | Bullish      | Neutral     | Hold + tight stops
+     Bearish   | Bullish       | Bearish      | Cautious    | Reduce position
+     Bearish   | Bearish       | Bullish      | Cautious    | Reduce position
+     Bearish   | Bearish       | Bearish      | Strong Sell | Close/reverse
+     ```
 
 3. **Analysis Enhancement**
    - [ ] Create options-based sentiment indicators
@@ -114,6 +136,10 @@ Implement a Python-based system to collect and analyze dark pool trades and news
    - [ ] Implement efficient data storage
    - [ ] Create data retention policies
    - [ ] Set up performance monitoring
+   - [ ] Implement tiered data collection:
+     - Tier 1: Dark pool data (highest frequency)
+     - Tier 2: Options flow data (medium frequency)
+     - Tier 3: News data (lower frequency)
 
 ### Phase 4: Digital Ocean Setup
 1. **Infrastructure**
@@ -185,6 +211,9 @@ Implement a Python-based system to collect and analyze dark pool trades and news
 - [ ] Implement indexing strategy
 - [ ] Monitor system resources
 - [ ] Plan for scaling
+- [ ] Implement time-based collection strategy:
+  - Market hours: Focus on dark pool and options flow
+  - After hours: Prioritize news collection
 
 ### Documentation
 - [ ] Create system documentation
@@ -211,21 +240,26 @@ Implement a Python-based system to collect and analyze dark pool trades and news
    - < 1% data loss
    - < 5 minutes data latency
    - Successful correlation of dark pool and news data
+   - API usage within free tier limits
+   - Efficient data filtering by watchlist
 
 2. **Analysis**
    - < 1 minute query response time
    - 100% notification delivery
    - 0 false positives in alerts
    - Measurable improvement in trade timing
+   - Successful integration of all three data sources
 
 3. **Trading Performance**
    - Improved entry/exit timing
    - Better position sizing based on flow
    - Reduced false signals
    - Increased win rate
+   - More accurate signal generation
 
 4. **System**
    - 99.9% system uptime
    - < 1 hour recovery time
    - 0 security incidents
-   - Efficient API usage within limits 
+   - Efficient API usage within limits
+   - Optimized data collection patterns 

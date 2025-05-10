@@ -14,9 +14,9 @@ from pathlib import Path
 # Add the current directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from options_flow.scripts.data_fetcher import OptionsDataFetcher
-from options_flow.config.api_config import POLYGON_API_KEY, RAW_DATA_DIR, PROCESSED_DATA_DIR
-from options_flow.config.watchlist import WATCHLIST
+from flow_analysis.scripts.data_fetcher import OptionsDataFetcher
+from flow_analysis.config.api_config import POLYGON_API_KEY, RAW_DATA_DIR, PROCESSED_DATA_DIR
+from flow_analysis.config.watchlist import WATCHLIST
 
 class TestOptionsDataFetcher(unittest.TestCase):
     def setUp(self):

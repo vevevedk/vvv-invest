@@ -23,7 +23,7 @@ from config.api_config import (
     DARKPOOL_TICKER_ENDPOINT, DEFAULT_HEADERS, REQUEST_TIMEOUT,
     REQUEST_RATE_LIMIT
 )
-from config.watchlist import (
+from flow_analysis.config.watchlist import (
     SYMBOLS, BLOCK_SIZE_THRESHOLD, PREMIUM_THRESHOLD,
     PRICE_IMPACT_THRESHOLD, MARKET_OPEN, MARKET_CLOSE
 )

@@ -22,7 +22,7 @@ from config.api_config import (
     OPTIONS_STRIKES_ENDPOINT, DEFAULT_HEADERS, REQUEST_TIMEOUT,
     REQUEST_RATE_LIMIT
 )
-from config.watchlist import SYMBOLS
+from flow_analysis.config.watchlist import SYMBOLS
 
 # Set up logging
 logging.basicConfig(

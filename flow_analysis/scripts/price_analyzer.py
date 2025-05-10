@@ -17,7 +17,7 @@ import seaborn as sns
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from config.watchlist import (
+from flow_analysis.config.watchlist import (
     SYMBOLS, BLOCK_SIZE_THRESHOLD, PREMIUM_THRESHOLD,
     PRICE_IMPACT_THRESHOLD, MARKET_OPEN, MARKET_CLOSE
 )
