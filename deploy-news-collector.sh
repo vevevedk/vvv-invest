@@ -3,37 +3,6 @@
 # Exit on error
 set -e
 
-# Pull latest changes
-echo "Pulling latest changes from git..."
-git pull origin main
-
-# Set up database tables
-echo "Setting up database tables..."
-psql -d trading_data -f flow_analysis/scripts/create_news_tables.sql
-
-# Set up cron job if it doesn't exist
-echo "Setting up cron job..."
-CRON_JOB="*/5 * * * * cd /opt/vvv-invest && /opt/vvv-invest/venv/bin/python3 flow_analysis/scripts/news_collector.py >> /var/log/news_collector/cron.log 2>&1"
-
-# Check if cron job already exists
-if ! crontab -l | grep -q "news_collector.py"; then
-    (crontab -l 2>/dev/null; echo "$CRON_JOB") | crontab -
-    echo "Cron job added successfully"
-else
-    echo "Cron job already exists"
-fi
-
-# Create log directory if it doesn't exist
-echo "Setting up logging..."
-sudo mkdir -p /var/log/news_collector
-sudo chown collector:collector /var/log/news_collector
-
-# Set up logrotate
-echo "Setting up logrotate..."
-sudo cp news-collector.logrotate /etc/logrotate.d/news_collector
-sudo chown root:root /etc/logrotate.d/news_collector
-sudo chmod 644 /etc/logrotate.d/news_collector
-
 # Stop existing services
 echo "Stopping existing services..."
 sudo systemctl stop news-collector-worker news-collector-beat
@@ -43,6 +12,20 @@ echo "Copying service files..."
 sudo cp news-collector-worker.service /etc/systemd/system/
 sudo cp news-collector-beat.service /etc/systemd/system/
 sudo cp news-collector.logrotate /etc/logrotate.d/
+
+# Update service files for production paths
+echo "Updating service files for production..."
+sudo sed -i 's|/Users/iversen/Work/veveve/vvv-invest|/opt/darkpool_collector|g' /etc/systemd/system/news-collector-worker.service
+sudo sed -i 's|/Users/iversen/Work/veveve/vvv-invest|/opt/darkpool_collector|g' /etc/systemd/system/news-collector-beat.service
+sudo sed -i 's|/usr/local/bin|/opt/darkpool_collector/venv/bin|g' /etc/systemd/system/news-collector-worker.service
+sudo sed -i 's|/usr/local/bin|/opt/darkpool_collector/venv/bin|g' /etc/systemd/system/news-collector-beat.service
+sudo sed -i 's|iversen|avxz|g' /etc/systemd/system/news-collector-worker.service
+sudo sed -i 's|iversen|avxz|g' /etc/systemd/system/news-collector-beat.service
+
+# Update logrotate config for production paths
+echo "Updating logrotate config..."
+sudo sed -i 's|/Users/iversen/Work/veveve/vvv-invest|/opt/darkpool_collector|g' /etc/logrotate.d/news-collector
+sudo sed -i 's|iversen|avxz|g' /etc/logrotate.d/news-collector
 
 # Reload systemd
 echo "Reloading systemd..."
