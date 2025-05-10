@@ -1,4 +1,5 @@
 from collectors.darkpool_collector import DarkPoolCollector
+from flow_analysis.scripts.news_collector import NewsCollector
 from datetime import datetime, timedelta
 import pytz
 import time
@@ -9,6 +10,10 @@ from flow_analysis.config.api_config import (
 
 def run_darkpool_collector():
     collector = DarkPoolCollector()
+    collector.run()
+
+def run_news_collector():
+    collector = NewsCollector()
     collector.run()
 
 def backfill_qqq_trades(start_time: datetime = None, end_time: datetime = None):

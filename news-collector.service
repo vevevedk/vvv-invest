@@ -1,15 +1,15 @@
 [Unit]
-Description=News Headlines Collector Service
+Description=News Collector Service
 After=network.target
 
 [Service]
 Type=simple
-User=collector
-WorkingDirectory=/opt/vvv-invest
-Environment=PYTHONPATH=/opt/vvv-invest
-ExecStart=/opt/vvv-invest/venv/bin/python3 flow_analysis/scripts/news_collector.py --continuous
+User=iversen
+WorkingDirectory=/Users/iversen/Work/veveve/vvv-invest
+Environment=PYTHONPATH=/Users/iversen/Work/veveve/vvv-invest
+ExecStart=/usr/local/bin/celery -A celery_app worker -l info -Q news_collector
 Restart=always
-RestartSec=60
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target 

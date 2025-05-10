@@ -1,9 +1,9 @@
-/var/log/news_collector/*.log {
+/Users/iversen/Work/veveve/vvv-invest/logs/news_collector.log {
     daily
-    missingok
     rotate 7
     compress
     delaycompress
+    missingok
     notifempty
-    create 0640 collector collector
+    create 644 iversen iversen
 } 

@@ -34,4 +34,30 @@ sudo cp news-collector.logrotate /etc/logrotate.d/news_collector
 sudo chown root:root /etc/logrotate.d/news_collector
 sudo chmod 644 /etc/logrotate.d/news_collector
 
+# Stop existing services
+echo "Stopping existing services..."
+sudo systemctl stop news-collector-worker news-collector-beat
+
+# Copy service files
+echo "Copying service files..."
+sudo cp news-collector-worker.service /etc/systemd/system/
+sudo cp news-collector-beat.service /etc/systemd/system/
+sudo cp news-collector.logrotate /etc/logrotate.d/
+
+# Reload systemd
+echo "Reloading systemd..."
+sudo systemctl daemon-reload
+
+# Start services
+echo "Starting services..."
+sudo systemctl start news-collector-worker
+sudo systemctl start news-collector-beat
+sudo systemctl enable news-collector-worker
+sudo systemctl enable news-collector-beat
+
+# Check status
+echo "Checking service status..."
+sudo systemctl status news-collector-worker
+sudo systemctl status news-collector-beat
+
 echo "Deployment completed successfully!" 

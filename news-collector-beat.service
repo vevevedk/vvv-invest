@@ -1,0 +1,16 @@
+[Unit]
+Description=News Collector Celery Beat
+After=network.target redis.service news-collector-worker.service
+
+[Service]
+Type=simple
+User=iversen
+Group=iversen
+WorkingDirectory=/Users/iversen/Work/veveve/vvv-invest
+Environment="PATH=/usr/local/bin"
+ExecStart=/usr/local/bin/celery -A celery_app beat --loglevel=info
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target 

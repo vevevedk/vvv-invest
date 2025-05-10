@@ -1,0 +1,16 @@
+[Unit]
+Description=News Collector Celery Worker
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=iversen
+Group=iversen
+WorkingDirectory=/Users/iversen/Work/veveve/vvv-invest
+Environment="PATH=/usr/local/bin"
+ExecStart=/usr/local/bin/celery -A celery_app worker --loglevel=info
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target 
