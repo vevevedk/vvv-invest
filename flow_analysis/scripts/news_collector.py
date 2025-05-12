@@ -67,6 +67,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Override DB_CONFIG with production settings
+DB_CONFIG = {
+    'dbname': 'defaultdb',
+    'user': 'doadmin',
+    'password': 'AVNS_SrG4Bo3B7uCNEPONkE4',
+    'host': 'vvv-trading-db-do-user-2110609-0.i.db.ondigitalocean.com',
+    'port': '25060',
+    'sslmode': 'require'
+}
+
+print("DB_CONFIG:", DB_CONFIG)
+
 class NewsCollector:
     """Collect and process news headlines from the API."""
     
@@ -307,7 +319,7 @@ class NewsCollector:
             # Create table if it doesn't exist using SQLAlchemy
             with self.engine.connect() as conn:
                 create_table_sql = """
-                CREATE TABLE IF NOT EXISTS news_headlines (
+                CREATE TABLE IF NOT EXISTS trading.news_headlines (
                     id SERIAL PRIMARY KEY,
                     headline TEXT NOT NULL,
                     published_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -347,7 +359,7 @@ class NewsCollector:
                 try:
                     with raw_conn.cursor() as cur:
                         insert_sql = """
-                        INSERT INTO news_headlines (
+                        INSERT INTO trading.news_headlines (
                             headline, published_at, source, url,
                             symbols, sentiment, impact_score, collected_at
                         ) VALUES %s
