@@ -9,33 +9,29 @@ from collectors.news_tasks import run_news_collector
 load_dotenv()
 
 # Create Celery app
-app = Celery('tasks', broker='redis://localhost:6379/0')
+app = Celery('darkpool_collector')
 
 # Configure Celery
 app.conf.update(
-    broker_url=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
-    result_backend=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
+    broker_url='redis://localhost:6379/0',
+    result_backend='redis://localhost:6379/0',
     task_serializer='json',
     accept_content=['json'],
     result_serializer='json',
     timezone='UTC',
     enable_utc=True,
-    task_routes={
-        'celery_app.run_darkpool_collector_task': {'queue': 'darkpool_collector'},
-        'celery_app.backfill_qqq_trades_task': {'queue': 'darkpool_collector'},
-        'celery_app.run_news_collector_task': {'queue': 'news_collector'},
-    },
-    beat_schedule={
-        'run-darkpool-collector': {
-            'task': 'celery_app.run_darkpool_collector_task',
-            'schedule': crontab(minute='*/5'),  # Every 5 minutes
-        },
-        'run-news-collector': {
-            'task': 'celery_app.run_news_collector_task',
-            'schedule': crontab(minute='*/5'),  # Every 5 minutes
-        },
-    }
 )
+
+# Import tasks
+from collectors.tasks import run_darkpool_collector, backfill_qqq_trades
+
+# Configure beat schedule
+app.conf.beat_schedule = {
+    'run-darkpool-collector-every-5-mins': {
+        'task': 'collectors.tasks.run_darkpool_collector',
+        'schedule': crontab(minute='*/5'),  # Every 5 minutes
+    },
+}
 
 # Register tasks
 @app.task(name='celery_app.run_darkpool_collector_task')
