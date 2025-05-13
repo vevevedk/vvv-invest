@@ -8,7 +8,8 @@ User=avxz
 Group=avxz
 WorkingDirectory=/opt/darkpool_collector
 Environment="PATH=/opt/darkpool_collector/venv/bin"
-ExecStart=/opt/darkpool_collector/venv/bin/celery -A celery_app.app worker --loglevel=info
+Environment="PYTHONPATH=/opt/darkpool_collector"
+ExecStart=/opt/darkpool_collector/venv/bin/celery -A celery_app.app worker --loglevel=info -Q news_collector
 Restart=always
 RestartSec=10
 

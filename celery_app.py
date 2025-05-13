@@ -1,34 +1,36 @@
-import os
-import sys
 from celery import Celery
+from celery.schedules import crontab
+import os
+from dotenv import load_dotenv
 
-# Add the current directory to Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
+# Load environment variables
+load_dotenv()
 
-app = Celery(
-    'collectors',
-    broker='redis://localhost:6379/0',
-    backend='redis://localhost:6379/1'
+# Create Celery app
+app = Celery('collectors')
+
+# Configure Celery
+app.conf.update(
+    broker_url=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
+    result_backend=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
+    task_serializer='json',
+    accept_content=['json'],
+    result_serializer='json',
+    timezone='UTC',
+    enable_utc=True,
 )
 
-app.conf.timezone = 'UTC'
+# Import tasks
+from collectors.news_tasks import run_news_collector
 
-# Import and decorate the tasks
-from collectors.tasks import run_darkpool_collector, run_news_collector, backfill_qqq_trades
-run_darkpool_collector = app.task(run_darkpool_collector)
+# Register tasks
 run_news_collector = app.task(run_news_collector)
-backfill_qqq_trades = app.task(backfill_qqq_trades)
 
+# Configure beat schedule
 app.conf.beat_schedule = {
-    'run-darkpool-collector-every-5-mins': {
-        'task': 'collectors.tasks.run_darkpool_collector',
-        'schedule': 300.0,  # every 5 minutes
-    },
-    'run-news-collector-every-15-mins': {
-        'task': 'collectors.tasks.run_news_collector',
-        'schedule': 900.0,  # every 15 minutes
+    'collect-news-every-5-minutes': {
+        'task': 'collectors.news_tasks.run_news_collector',
+        'schedule': crontab(minute='*/5'),
     },
 }
 
