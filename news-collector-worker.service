@@ -1,6 +1,6 @@
 [Unit]
 Description=News Collector Celery Worker
-After=network.target redis.service
+After=network.target redis-server.service
 
 [Service]
 Type=simple
@@ -8,8 +8,7 @@ User=avxz
 Group=avxz
 WorkingDirectory=/opt/darkpool_collector
 Environment="PATH=/opt/darkpool_collector/venv/bin"
-Environment="PYTHONPATH=/opt/darkpool_collector"
-ExecStart=/opt/darkpool_collector/venv/bin/celery -A celery_app.app worker --loglevel=info -Q news_collector
+ExecStart=/opt/darkpool_collector/venv/bin/celery -A news_celery_app.app worker --loglevel=info -Q news_collector -n news_worker@%h
 Restart=always
 RestartSec=10
 
