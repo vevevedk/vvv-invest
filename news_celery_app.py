@@ -19,8 +19,8 @@ from collectors.news_tasks import run_news_collector
 
 # Configure beat schedule
 app.conf.beat_schedule = {
-    'run-news-collector-every-15-mins': {
+    'run-news-collector-every-5-mins': {
         'task': 'collectors.news_tasks.run_news_collector',
-        'schedule': crontab(minute='*/15'),  # Every 15 minutes
+        'schedule': crontab(minute='*/5'),  # Every 5 minutes
     },
 } 
