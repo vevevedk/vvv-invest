@@ -13,7 +13,7 @@ UW_API_TOKEN = os.getenv('UW_API_TOKEN')
 if not UW_API_TOKEN:
     raise ValueError("UW_API_TOKEN environment variable is not set")
 
-UW_BASE_URL = "https://api.unusualwhales.com/api"  # Base URL for all endpoints
+UW_BASE_URL = "https://api.unusualwhales.com/api"  # Base URL without v1
 
 # Endpoints
 # Options Flow Endpoints

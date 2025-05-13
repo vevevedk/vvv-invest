@@ -48,6 +48,7 @@ class DarkPoolCollector(BaseCollector):
         return True
 
     def collect(self):
+        """Collect dark pool trades from UW API."""
         if not self.is_market_open():
             self.logger.info("Market is closed. Skipping collection.")
             return

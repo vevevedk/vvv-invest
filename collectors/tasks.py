@@ -1,5 +1,5 @@
 from collectors.darkpool_collector import DarkPoolCollector
-from flow_analysis.scripts.news_collector import NewsCollector
+from collectors.news_collector import NewsCollector
 from datetime import datetime, timedelta
 import pytz
 import time

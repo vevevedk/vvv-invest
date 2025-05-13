@@ -67,20 +67,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Override DB_CONFIG with production settings
-DB_CONFIG = {
-    'dbname': 'defaultdb',
-    'user': 'doadmin',
-    'password': 'AVNS_SrG4Bo3B7uCNEPONkE4',
-    'host': 'vvv-trading-db-do-user-2110609-0.i.db.ondigitalocean.com',
-    'port': '25060',
-    'sslmode': 'require'
-}
-
-print("DB_CONFIG:", DB_CONFIG)
-
 class NewsCollector:
-    """Collect and process news headlines from the API."""
+    """Collect and process news headlines from the UW API."""
     
     def __init__(self):
         """Initialize the collector."""
@@ -186,45 +174,6 @@ class NewsCollector:
         except Exception as e:
             logger.error(f"Error loading seen headlines: {str(e)}")
             
-    def _analyze_sentiment(self, headline: str) -> float:
-        """Analyze sentiment of a news headline"""
-        # Simple sentiment analysis based on keywords
-        positive_words = {
-            'up', 'rise', 'gain', 'bullish', 'positive', 'strong', 'beat', 'surge',
-            'announces', 'revolutionary', 'new', 'partnership', 'growth', 'profit',
-            'success', 'breakthrough', 'innovation', 'record', 'high'
-        }
-        negative_words = {
-            'down', 'fall', 'drop', 'bearish', 'negative', 'weak', 'miss', 'plunge',
-            'concerns', 'loss', 'decline', 'risk', 'warning', 'failure', 'low',
-            'debt', 'bankruptcy', 'crisis', 'crash'
-        }
-        
-        words = set(headline.lower().split())
-        positive_count = len(words & positive_words)
-        negative_count = len(words & negative_words)
-        
-        if positive_count + negative_count == 0:
-            return 0.0
-            
-        return (positive_count - negative_count) / (positive_count + negative_count)
-        
-    def _calculate_impact_score(self, headline: str, sentiment: float) -> float:
-        """Calculate impact score for a news headline"""
-        # Base score from sentiment
-        impact_score = abs(sentiment) * 5.0  # Scale sentiment to 0-5 range
-
-        # Adjust based on headline length (longer headlines tend to be more significant)
-        length_factor = min(len(headline.split()) / 10.0, 1.0)  # Cap at 1.0
-        impact_score *= (1.0 + length_factor)
-
-        # Look for impact words
-        impact_words = {'breaking', 'urgent', 'exclusive', 'alert', 'major', 'critical'}
-        impact_count = len(set(headline.lower().split()) & impact_words)
-        impact_score *= (1.0 + 0.5 * impact_count)  # Boost score for each impact word
-
-        return impact_score
-        
     def _process_news(self, news_data: List[Dict]) -> pd.DataFrame:
         """Process news data into a DataFrame"""
         processed_news = []
@@ -249,20 +198,15 @@ class NewsCollector:
                 if not any(symbol in SYMBOLS for symbol in symbols):
                     continue
                 
-                # Analyze sentiment
-                sentiment = self._analyze_sentiment(headline)
-                
-                # Calculate impact score
-                impact_score = self._calculate_impact_score(headline, sentiment)
-                
+                # Process the news item
                 processed_news.append({
                     'headline': headline,
                     'published_at': published_at,
                     'source': item.get('source', 'Unknown'),
                     'url': item.get('url', ''),
                     'symbols': symbols,
-                    'sentiment': sentiment,
-                    'impact_score': impact_score
+                    'sentiment': item.get('sentiment', 0.0),
+                    'impact_score': item.get('impact_score', 0.0)
                 })
                 
                 # Add to seen headlines
@@ -274,27 +218,8 @@ class NewsCollector:
                 
         return pd.DataFrame(processed_news)
         
-    def _extract_symbols(self, headline: str) -> List[str]:
-        """Extract stock symbols from a headline"""
-        symbols = []
-        
-        # Look for $SYMBOL pattern
-        dollar_symbols = re.findall(r'\$([A-Z]{1,5})', headline)
-        symbols.extend(dollar_symbols)
-        
-        # Look for plain symbols
-        words = headline.split()
-        for word in words:
-            # Clean the word
-            word = word.strip('.,!?:;()[]{}').upper()
-            # Check if it's a valid symbol (1-5 uppercase letters)
-            if word in SYMBOLS:
-                symbols.append(word)
-                
-        return list(set(symbols))  # Remove duplicates
-        
     def collect_news(self) -> pd.DataFrame:
-        """Collect the latest news headlines"""
+        """Collect the latest news headlines from UW API"""
         endpoint = f"{self.base_url}{NEWS_ENDPOINT}"
         
         params = {
