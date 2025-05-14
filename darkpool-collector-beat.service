@@ -9,7 +9,7 @@ Group=avxz
 WorkingDirectory=/opt/darkpool_collector
 Environment="PATH=/opt/darkpool_collector/venv/bin"
 EnvironmentFile=/opt/darkpool_collector/.env.prod
-ExecStart=/opt/darkpool_collector/venv/bin/celery -A celery_app.app beat --loglevel=info
+ExecStart=/opt/darkpool_collector/venv/bin/celery -A celery_app.app beat --loglevel=info --schedule=/opt/darkpool_collector/celerybeat-darkpool-schedule
 Restart=always
 RestartSec=10
 
