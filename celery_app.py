@@ -21,13 +21,10 @@ app.conf.update(
     enable_utc=True,
 )
 
-# Import tasks
-from collectors.tasks import run_darkpool_collector, backfill_qqq_trades
-
 # Configure beat schedule
 app.conf.beat_schedule = {
     'run-darkpool-collector-every-5-mins': {
-        'task': 'collectors.tasks.run_darkpool_collector',
+        'task': 'celery_app.run_darkpool_collector_task',
         'schedule': crontab(minute='*/5'),  # Every 5 minutes
     },
 }
