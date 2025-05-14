@@ -1,0 +1,89 @@
+[0;1;32m●[0m news-collector-worker.service - News Collector Celery Worker
+     Loaded: loaded (]8;;file://mail.smagalagellerup.dk/etc/systemd/system/news-collector-worker.service/etc/systemd/system/news-collector-worker.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;32mactive (running)[0m since Wed 2025-05-14 15:30:15 CEST; 10min ago
+ Invocation: 0f45010c281246ef92de5dda48dbc162
+   Main PID: 659264 (celery)
+      Tasks: 2 (limit: 2317)
+     Memory: 55.8M (peak: 56.1M)
+        CPU: 2.342s
+     CGroup: /system.slice/news-collector-worker.service
+             ├─[0;38;5;245m659264 /opt/darkpool_collector/venv/bin/python3 /opt/darkpool_collector/venv/bin/celery -A news_celery_app.app worker --loglevel=info -Q news_collector -n news_worker@/root[0m
+             └─[0;38;5;245m659335 /opt/darkpool_collector/venv/bin/python3 /opt/darkpool_collector/venv/bin/celery -A news_celery_app.app worker --loglevel=info -Q news_collector -n news_worker@/root[0m
+
+May 14 15:30:17 mail.smagalagellerup.dk celery[659264]:                 .> news_collector   exchange=news_collector(direct) key=news_collector
+May 14 15:30:17 mail.smagalagellerup.dk celery[659264]:                 
+May 14 15:30:17 mail.smagalagellerup.dk celery[659264]: [tasks]
+May 14 15:30:17 mail.smagalagellerup.dk celery[659264]:   . collectors.news_tasks.run_news_collector
+May 14 15:30:17 mail.smagalagellerup.dk celery[659264]: [2025-05-14 15:30:17,690: INFO/MainProcess] Connected to redis://localhost:6379/0
+May 14 15:30:17 mail.smagalagellerup.dk celery[659264]: [2025-05-14 15:30:17,781: INFO/MainProcess] mingle: searching for neighbors
+May 14 15:30:18 mail.smagalagellerup.dk celery[659264]: [2025-05-14 15:30:18,933: INFO/MainProcess] mingle: sync with 2 nodes
+May 14 15:30:18 mail.smagalagellerup.dk celery[659264]: [2025-05-14 15:30:18,933: INFO/MainProcess] mingle: sync complete
+May 14 15:30:18 mail.smagalagellerup.dk celery[659264]: [2025-05-14 15:30:18,955: INFO/MainProcess] news_worker@/root ready.
+May 14 15:30:27 mail.smagalagellerup.dk celery[659264]: [2025-05-14 15:30:27,751: INFO/MainProcess] sync with darkpool_worker@/root
+
+[0;1;32m●[0m news-collector-beat.service - News Collector Celery Beat
+     Loaded: loaded (]8;;file://mail.smagalagellerup.dk/etc/systemd/system/news-collector-beat.service/etc/systemd/system/news-collector-beat.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;32mactive (running)[0m since Wed 2025-05-14 15:30:12 CEST; 10min ago
+ Invocation: a0726b6077814801af4ae50a3db1036a
+   Main PID: 658999 (celery)
+      Tasks: 1 (limit: 2317)
+     Memory: 57.3M (peak: 57.5M)
+        CPU: 879ms
+     CGroup: /system.slice/news-collector-beat.service
+             └─[0;38;5;245m658999 /opt/darkpool_collector/venv/bin/python3 /opt/darkpool_collector/venv/bin/celery -A news_celery_app.app beat --loglevel=info[0m
+
+May 14 15:30:15 mail.smagalagellerup.dk celery[658999]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+May 14 15:30:15 mail.smagalagellerup.dk celery[658999]:   File "/usr/lib/python3.12/shelve.py", line 227, in __init__
+May 14 15:30:15 mail.smagalagellerup.dk celery[658999]:     Shelf.__init__(self, dbm.open(filename, flag), protocol, writeback)
+May 14 15:30:15 mail.smagalagellerup.dk celery[658999]:                          ^^^^^^^^^^^^^^^^^^^^^^^^
+May 14 15:30:15 mail.smagalagellerup.dk celery[658999]:   File "/usr/lib/python3.12/dbm/__init__.py", line 95, in open
+May 14 15:30:15 mail.smagalagellerup.dk celery[658999]:     return mod.open(file, flag, mode)
+May 14 15:30:15 mail.smagalagellerup.dk celery[658999]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+May 14 15:30:15 mail.smagalagellerup.dk celery[658999]: _gdbm.error: [Errno 11] Resource temporarily unavailable: 'celerybeat-schedule'
+May 14 15:35:00 mail.smagalagellerup.dk celery[658999]: [2025-05-14 15:35:00,009: INFO/MainProcess] Scheduler: Sending due task run-news-collector-every-5-mins (collectors.news_tasks.run_news_collector)
+May 14 15:40:00 mail.smagalagellerup.dk celery[658999]: [2025-05-14 15:40:00,000: INFO/MainProcess] Scheduler: Sending due task run-news-collector-every-5-mins (collectors.news_tasks.run_news_collector)
+
+[0;1;32m●[0m darkpool-collector-worker.service - Dark Pool Collector Celery Worker
+     Loaded: loaded (]8;;file://mail.smagalagellerup.dk/etc/systemd/system/darkpool-collector-worker.service/etc/systemd/system/darkpool-collector-worker.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;32mactive (running)[0m since Wed 2025-05-14 15:30:24 CEST; 10min ago
+ Invocation: 5a83e1b252aa449686657fa91a92cf50
+   Main PID: 659846 (celery)
+      Tasks: 2 (limit: 2317)
+     Memory: 54.6M (peak: 54.9M)
+        CPU: 2.325s
+     CGroup: /system.slice/darkpool-collector-worker.service
+             ├─[0;38;5;245m659846 /opt/darkpool_collector/venv/bin/python3 /opt/darkpool_collector/venv/bin/celery -A celery_app.app worker --loglevel=info -Q darkpool_collector -n darkpool_worker@/root[0m
+             └─[0;38;5;245m660101 /opt/darkpool_collector/venv/bin/python3 /opt/darkpool_collector/venv/bin/celery -A celery_app.app worker --loglevel=info -Q darkpool_collector -n darkpool_worker@/root[0m
+
+May 14 15:30:27 mail.smagalagellerup.dk celery[659846]:                 .> darkpool_collector exchange=darkpool_collector(direct) key=darkpool_collector
+May 14 15:30:27 mail.smagalagellerup.dk celery[659846]:                 
+May 14 15:30:27 mail.smagalagellerup.dk celery[659846]: [tasks]
+May 14 15:30:27 mail.smagalagellerup.dk celery[659846]:   . celery_app.backfill_qqq_trades_task
+May 14 15:30:27 mail.smagalagellerup.dk celery[659846]:   . celery_app.run_darkpool_collector_task
+May 14 15:30:27 mail.smagalagellerup.dk celery[659846]: [2025-05-14 15:30:27,696: INFO/MainProcess] Connected to redis://localhost:6379/0
+May 14 15:30:27 mail.smagalagellerup.dk celery[659846]: [2025-05-14 15:30:27,724: INFO/MainProcess] mingle: searching for neighbors
+May 14 15:30:28 mail.smagalagellerup.dk celery[659846]: [2025-05-14 15:30:28,765: INFO/MainProcess] mingle: sync with 2 nodes
+May 14 15:30:28 mail.smagalagellerup.dk celery[659846]: [2025-05-14 15:30:28,769: INFO/MainProcess] mingle: sync complete
+May 14 15:30:28 mail.smagalagellerup.dk celery[659846]: [2025-05-14 15:30:28,803: INFO/MainProcess] darkpool_worker@/root ready.
+
+[0;1;32m●[0m darkpool-collector-beat.service - Dark Pool Collector Celery Beat
+     Loaded: loaded (]8;;file://mail.smagalagellerup.dk/etc/systemd/system/darkpool-collector-beat.service/etc/systemd/system/darkpool-collector-beat.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;32mactive (running)[0m since Wed 2025-05-14 15:30:24 CEST; 10min ago
+ Invocation: c88ba30bec814594925db8198202ad3e
+   Main PID: 659847 (celery)
+      Tasks: 1 (limit: 2317)
+     Memory: 38.9M (peak: 39.1M)
+        CPU: 828ms
+     CGroup: /system.slice/darkpool-collector-beat.service
+             └─[0;38;5;245m659847 /opt/darkpool_collector/venv/bin/python3 /opt/darkpool_collector/venv/bin/celery -A celery_app.app beat --loglevel=info[0m
+
+May 14 15:30:27 mail.smagalagellerup.dk celery[659847]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+May 14 15:30:27 mail.smagalagellerup.dk celery[659847]:   File "/usr/lib/python3.12/shelve.py", line 227, in __init__
+May 14 15:30:27 mail.smagalagellerup.dk celery[659847]:     Shelf.__init__(self, dbm.open(filename, flag), protocol, writeback)
+May 14 15:30:27 mail.smagalagellerup.dk celery[659847]:                          ^^^^^^^^^^^^^^^^^^^^^^^^
+May 14 15:30:27 mail.smagalagellerup.dk celery[659847]:   File "/usr/lib/python3.12/dbm/__init__.py", line 95, in open
+May 14 15:30:27 mail.smagalagellerup.dk celery[659847]:     return mod.open(file, flag, mode)
+May 14 15:30:27 mail.smagalagellerup.dk celery[659847]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+May 14 15:30:27 mail.smagalagellerup.dk celery[659847]: _gdbm.error: [Errno 11] Resource temporarily unavailable: 'celerybeat-schedule'
+May 14 15:35:00 mail.smagalagellerup.dk celery[659847]: [2025-05-14 15:35:00,007: INFO/MainProcess] Scheduler: Sending due task run-darkpool-collector-every-5-mins (celery_app.run_darkpool_collector_task)
+May 14 15:40:00 mail.smagalagellerup.dk celery[659847]: [2025-05-14 15:40:00,002: INFO/MainProcess] Scheduler: Sending due task run-darkpool-collector-every-5-mins (celery_app.run_darkpool_collector_task)
