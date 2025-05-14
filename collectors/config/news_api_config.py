@@ -5,16 +5,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # News API Configuration
-NEWS_API_TOKEN = os.getenv('NEWS_API_TOKEN')
-if not NEWS_API_TOKEN:
-    raise ValueError("NEWS_API_TOKEN environment variable is not set")
+UW_API_TOKEN = os.getenv("UW_API_TOKEN")
+if not UW_API_TOKEN:
+    raise ValueError("UW_API_TOKEN environment variable is not set")
 
-NEWS_BASE_URL = "https://api.unusualwhales.com/news"
-NEWS_ENDPOINT = f"{NEWS_BASE_URL}/latest"
+NEWS_BASE_URL = "https://api.unusualwhales.com"
+NEWS_ENDPOINT = f"{NEWS_BASE_URL}/api/news/headlines"
 
-DEFAULT_HEADERS = {
-    "Authorization": f"Bearer {NEWS_API_TOKEN}",
-    "Content-Type": "application/json"
-}
+DEFAULT_HEADERS = {"Authorization": f"Bearer {UW_API_TOKEN}"}
 
 REQUEST_TIMEOUT = 30  # seconds 

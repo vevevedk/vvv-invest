@@ -78,3 +78,7 @@ Each file contains the respective data with timestamps and additional calculated
 - The script uses a single database connection for all queries
 - Timestamps are automatically converted to datetime objects
 - Data is saved with a timestamp in the filename for easy tracking
+
+## Environment Variables
+
+- `UW_API_TOKEN`: API token for both news and dark pool collectors (required)
