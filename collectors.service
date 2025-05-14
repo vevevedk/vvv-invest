@@ -1,0 +1,17 @@
+[Unit]
+Description=VVV News Collector Worker
+After=network.target redis-server.service
+
+[Service]
+Type=simple
+User=avxz
+Group=avxz
+WorkingDirectory=/opt/darkpool_collector
+EnvironmentFile=/opt/darkpool_collector/.env.prod
+Environment="PATH=/opt/darkpool_collector/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/opt/darkpool_collector/venv/bin/celery -A news_celery_app worker --loglevel=INFO -Q news_collector
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target 
