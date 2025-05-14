@@ -12,6 +12,8 @@ class DarkPoolCollector(BaseCollector):
     def __init__(self):
         super().__init__()
         self.ny_tz = pytz.timezone('America/New_York')
+        # Only collect for SPY and QQQ
+        self.symbols = ['SPY', 'QQQ']
         # Log API token status (first 4 chars only for security)
         token = DEFAULT_HEADERS.get('Authorization', '').split()[-1]
         self.logger.info(f"API Token configured: {token[:4]}...")
@@ -55,7 +57,7 @@ class DarkPoolCollector(BaseCollector):
 
         self.logger.info("Collecting dark pool trades...")
         total_trades = 0
-        for symbol in SYMBOLS:
+        for symbol in self.symbols:
             try:
                 url = f"{UW_BASE_URL}{DARKPOOL_RECENT_ENDPOINT}?symbol={symbol}"
                 self.logger.debug(f"Making API request to: {url}")
