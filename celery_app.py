@@ -3,7 +3,6 @@ from celery.schedules import crontab
 import os
 from dotenv import load_dotenv
 from collectors.darkpool_tasks import run_darkpool_collector, backfill_qqq_trades
-from collectors.news_tasks import run_news_collector
 
 # Load environment variables
 load_dotenv()
@@ -41,9 +40,3 @@ def run_darkpool_collector_task():
 @app.task(name='celery_app.backfill_qqq_trades_task')
 def backfill_qqq_trades_task():
     return backfill_qqq_trades()
-
-@app.task(name='celery_app.run_news_collector_task')
-def run_news_collector_task():
-    return run_news_collector()
-
-# No need for autodiscover since we're explicitly importing the task 
