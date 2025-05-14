@@ -14,7 +14,7 @@ DB_CONFIG = {
     'password': os.getenv('DB_PASSWORD', ''),
     'host': os.getenv('DB_HOST', 'localhost'),
     'port': os.getenv('DB_PORT', '5432'),
-    'sslmode': os.getenv('DB_SSL_MODE', 'disable')  # Disable SSL for local development
+    'sslmode': os.getenv('DB_SSLMODE', 'disable')  # Changed from DB_SSL_MODE to DB_SSLMODE
 }
 
 # Schema and table configuration
