@@ -28,6 +28,10 @@ app.conf.beat_schedule = {
         'task': 'celery_app.run_darkpool_collector_task',
         'schedule': crontab(minute='*/5'),  # Every 5 minutes
     },
+    'run-news-collector-every-5-mins': {
+        'task': 'celery_app.run_news_collector_task',
+        'schedule': crontab(minute='*/5'),  # Every 5 minutes
+    },
 }
 
 # Register tasks
