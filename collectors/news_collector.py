@@ -1,6 +1,6 @@
 import logging
-from datetime import datetime
-from typing import List, Dict, Any
+from datetime import datetime, timedelta, timezone
+from typing import List, Dict, Any, Optional
 import requests
 import psycopg2
 from psycopg2.extras import DictCursor
@@ -22,7 +22,7 @@ print("Loaded environment file:", os.getenv('ENV_FILE', '.env.prod'))
 logger = logging.getLogger(__name__)
 
 class NewsCollector(BaseCollector):
-    """Collector for news articles."""
+    """Collector for news articles with pagination and date range support."""
     
     def __init__(self):
         super().__init__()
@@ -42,20 +42,64 @@ class NewsCollector(BaseCollector):
             sslmode=os.getenv("DB_SSLMODE", "prefer")
         )
 
-    def fetch_data(self) -> List[Dict[str, Any]]:
-        """Fetch news articles from the API."""
-        try:
-            response = self.session.get(
-                self.endpoint,
-                headers=self.headers,
-                timeout=self.timeout
-            )
-            response.raise_for_status()
-            response_data = response.json()
-            return response_data.get('data', [])
-        except Exception as e:
-            logger.error(f"Error fetching news data: {str(e)}")
-            raise
+    def fetch_data(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Fetch all news articles from the API within the date range [start_date, end_date].
+        If no dates are provided, defaults to current UTC day.
+        """
+        all_articles = []
+        limit = 100
+        page = 0
+        # Parse date range
+        if start_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        else:
+            start_dt = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+        if end_date:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)  # inclusive
+        else:
+            end_dt = start_dt + timedelta(days=1)
+        logger.info(f"Fetching news from {start_dt} to {end_dt}")
+        while True:
+            params = {"limit": limit, "page": page}
+            try:
+                response = self.session.get(
+                    self.endpoint,
+                    headers=self.headers,
+                    params=params,
+                    timeout=self.timeout
+                )
+                response.raise_for_status()
+                data = response.json().get('data', [])
+            except Exception as e:
+                logger.error(f"Error fetching news data (page {page}): {str(e)}")
+                break
+            if not data:
+                logger.info(f"No more data at page {page}")
+                break
+            # Filter by date range
+            filtered = []
+            for article in data:
+                created_at = article.get('created_at')
+                if not created_at:
+                    continue
+                try:
+                    created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                except Exception:
+                    continue
+                if start_dt <= created_dt < end_dt:
+                    filtered.append(article)
+            all_articles.extend(filtered)
+            logger.info(f"Page {page}: {len(filtered)} articles in range, {len(data)} total")
+            # Stop if all articles on this page are older than start_dt
+            if all(datetime.fromisoformat(a.get('created_at', '').replace('Z', '+00:00')) < start_dt for a in data if a.get('created_at')):
+                logger.info(f"All articles on page {page} are older than start date. Stopping.")
+                break
+            if len(data) < limit:
+                logger.info(f"Last page reached at page {page}")
+                break
+            page += 1
+        return all_articles
 
     def process_data(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Process the fetched news data."""
@@ -69,7 +113,9 @@ class NewsCollector(BaseCollector):
                     'published_at': article.get('created_at'),
                     'source': article.get('source'),
                     'symbols': article.get('tickers', []),
-                    'collected_at': datetime.utcnow().isoformat()
+                    'collected_at': datetime.utcnow().isoformat(),
+                    'sentiment': article.get('sentiment'),
+                    'impact_score': article.get('impact_score'),
                 }
                 processed_articles.append(processed_article)
             except Exception as e:
@@ -117,8 +163,11 @@ class NewsCollector(BaseCollector):
             logger.error(f"Error saving news data: {str(e)}")
             raise
 
-    def collect(self):
-        """Override collect method to fetch, process, and save news data."""
-        data = self.fetch_data()
+    def collect(self, start_date: Optional[str] = None, end_date: Optional[str] = None):
+        """
+        Fetch, process, and save news data for a date range.
+        If no dates are provided, defaults to current UTC day.
+        """
+        data = self.fetch_data(start_date=start_date, end_date=end_date)
         processed_data = self.process_data(data)
         self.save_data(processed_data) 
