@@ -30,7 +30,10 @@ SYMBOLS = [
     "GLD",  # Gold ETF
     "AAPL", # Apple Inc.
     "TSLA", # Tesla Inc.
-    "MSFT"
+    "MSFT", # Microsoft Corp.
+    "NVDA", # NVIDIA Corp.
+    "AMD",  # Advanced Micro Devices
+    "PLTR"  # Palantir Technologies
 ]
 
 # Analysis Thresholds
