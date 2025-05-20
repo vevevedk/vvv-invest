@@ -1,4 +1,8 @@
 import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)s: %(message)s'
+)
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 import requests
@@ -6,18 +10,19 @@ import psycopg2
 from psycopg2.extras import DictCursor
 import os
 from dotenv import load_dotenv
+import time
+
+# Load environment variables
+env_file = os.getenv("ENV_FILE", ".env")
+load_dotenv(env_file, override=True)
 
 from collectors.base_collector import BaseCollector
-from collectors.config.news_api_config import (
+from flow_analysis.config.api_config import (
     UW_API_TOKEN,
     NEWS_ENDPOINT,
     DEFAULT_HEADERS,
     REQUEST_TIMEOUT
 )
-
-# Load environment variables (including from .env.prod if present)
-load_dotenv(dotenv_path=os.getenv('ENV_FILE', '.env.prod'))
-print("Loaded environment file:", os.getenv('ENV_FILE', '.env.prod'))
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +51,13 @@ class NewsCollector(BaseCollector):
         """
         Fetch all news articles from the API within the date range [start_date, end_date].
         If no dates are provided, defaults to current UTC day.
+        Implements rate limiting and retry logic for 429 errors.
         """
         all_articles = []
-        limit = 100
+        limit = 100  # Use max allowed by API
         page = 0
+        max_retries = 5
+        base_delay = 1  # seconds
         # Parse date range
         if start_date:
             start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -62,18 +70,52 @@ class NewsCollector(BaseCollector):
         logger.info(f"Fetching news from {start_dt} to {end_dt}")
         while True:
             params = {"limit": limit, "page": page}
-            try:
-                response = self.session.get(
-                    self.endpoint,
-                    headers=self.headers,
-                    params=params,
-                    timeout=self.timeout
-                )
-                response.raise_for_status()
-                data = response.json().get('data', [])
-            except Exception as e:
-                logger.error(f"Error fetching news data (page {page}): {str(e)}")
+            logger.info(f"Fetching page {page} with params: {params}")
+            retries = 0
+            while retries <= max_retries:
+                try:
+                    logger.debug(f"Requesting page {page}, attempt {retries+1}")
+                    response = self.session.get(
+                        self.endpoint,
+                        headers=self.headers,
+                        params=params,
+                        timeout=self.timeout
+                    )
+                    if response.status_code == 429:
+                        delay = base_delay * (2 ** retries)
+                        logger.warning(f"429 Too Many Requests. Sleeping for {delay} seconds (retry {retries+1}/{max_retries})...")
+                        time.sleep(delay)
+                        retries += 1
+                        continue
+                    response.raise_for_status()
+                    logger.info(f"Successfully fetched page {page} on attempt {retries+1}")
+                    break  # Success, exit retry loop
+                except requests.RequestException as e:
+                    logger.error(f"Error fetching news data (page {page}, attempt {retries+1}): {str(e)}")
+                    delay = base_delay * (2 ** retries)
+                    logger.info(f"Sleeping for {delay} seconds before retrying...")
+                    time.sleep(delay)
+                    retries += 1
+            else:
+                logger.error(f"Max retries exceeded for page {page}. Skipping.")
                 break
+            data = response.json().get('data', [])
+            logger.info(f"Fetched {len(data)} articles from page {page}")
+            # Log the date range of this page
+            created_dates = []
+            for article in data:
+                created_at = article.get('created_at')
+                if created_at:
+                    try:
+                        created_dates.append(datetime.fromisoformat(created_at.replace('Z', '+00:00')))
+                    except Exception:
+                        continue
+            if created_dates:
+                min_date = min(created_dates)
+                max_date = max(created_dates)
+                logger.info(f"Page {page} article date range: {min_date} to {max_date}")
+            else:
+                logger.info(f"Page {page} has no valid created_at dates.")
             if not data:
                 logger.info(f"No more data at page {page}")
                 break
@@ -91,14 +133,21 @@ class NewsCollector(BaseCollector):
                     filtered.append(article)
             all_articles.extend(filtered)
             logger.info(f"Page {page}: {len(filtered)} articles in range, {len(data)} total")
-            # Stop if all articles on this page are older than start_dt
-            if all(datetime.fromisoformat(a.get('created_at', '').replace('Z', '+00:00')) < start_dt for a in data if a.get('created_at')):
-                logger.info(f"All articles on page {page} are older than start date. Stopping.")
-                break
+            # Improved stopping condition:
+            if created_dates:
+                if all(dt < start_dt for dt in created_dates):
+                    logger.info(f"All articles on page {page} are older than start date. Stopping.")
+                    break
+                if all(dt >= end_dt for dt in created_dates):
+                    logger.info(f"All articles on page {page} are newer than end date. Stopping.")
+                    break
             if len(data) < limit:
                 logger.info(f"Last page reached at page {page}")
                 break
             page += 1
+            logger.info(f"Sleeping for {base_delay} seconds before next page...")
+            time.sleep(base_delay)  # Rate limiting between requests
+        logger.info(f"Total articles fetched: {len(all_articles)}")
         return all_articles
 
     def process_data(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
