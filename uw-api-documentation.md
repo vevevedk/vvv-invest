@@ -103,34 +103,59 @@ Returns all expirations for a given ticker on a specific trading day.
 ### 4. News Headlines
 `GET https://api.unusualwhales.com/api/news/headlines`
 
-Returns the latest news headlines for financial markets.
+Returns the latest news headlines for financial markets. This endpoint provides access to news headlines that may impact the markets, including company-specific news, sector news, and market-wide events. Headlines can be filtered by source, content, and significance.
 
-**Parameters:**
-- `limit` (optional): Number of items to return (default: 50, min: 1, max: 100)
-- `major_only` (optional): When true, only returns major/significant news (default: false)
-- `page` (optional): Page number for pagination (starts at 0)
-- `search_term` (optional): Filter news headlines by content
-- `sources` (optional): Comma-separated list of news sources to filter by (e.g., 'Reuters,Bloomberg')
+**Request Headers:**
+- `Authorization: Bearer <YOUR_TOKEN>`
+- `Accept: application/json, text/plain`
 
-**Response Example:**
+**Query Parameters:**
+- `limit` (integer): How many items to return. Default: 50. Max: 100. Min: 1. Example: 10
+- `major_only` (boolean): When true, only returns major/significant news. Default: false. Example: true
+- `page` (integer): Page number (use with limit). Starts on page 0. Example: 1
+- `search_term` (string): A search term to filter news headlines by content. Example: earnings
+- `sources` (string): A comma-separated list of news sources to filter by (e.g., 'Reuters,Bloomberg'). Example: BusinessWire,MarketNews
+
+**Sample curl request:**
+```
+curl --request GET \
+  --url 'https://api.unusualwhales.com/api/news/headlines?limit=10&page=1&major_only=true&search_term=earnings&sources=BusinessWire,MarketNews' \
+  --header 'Accept: application/json, text/plain' \
+  --header 'Authorization: Bearer <YOUR_TOKEN>'
+```
+
+**Sample Response:**
 ```json
 {
   "data": [
     {
-      "created_at": "2024-04-27T19:30:00Z",
-      "headline": "Example News Headline",
+      "created_at": "2023-04-15T16:30:00Z",
+      "headline": "Company XYZ Reports Better Than Expected Earnings",
       "is_major": true,
-      "meta": {
-        "additional_info": "value"
-      },
+      "meta": {},
       "sentiment": "positive",
-      "source": "Reuters",
+      "source": "BusinessWire",
       "tags": ["earnings", "tech"],
-      "tickers": ["AAPL", "MSFT"]
+      "tickers": ["XYZ", "EXMP"]
+    },
+    {
+      "created_at": "2023-04-15T14:20:00Z",
+      "headline": "Federal Reserve Signals Possible Rate Cut",
+      "is_major": true,
+      "meta": {},
+      "sentiment": "neutral",
+      "source": "MarketNews",
+      "tags": ["federal-reserve", "interest-rates"],
+      "tickers": []
     }
   ]
 }
 ```
+
+**Rate Limiting & Pagination:**
+- Use the `limit` and `page` parameters for pagination.
+- Respect the API's rate limits (see official documentation or contact support for your plan's limits).
+- If you receive a 429 error, implement a delay and/or exponential backoff before retrying.
 
 ## Implementation Strategy for Options Flow Collector
 

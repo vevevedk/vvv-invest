@@ -10,12 +10,16 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from flow_analysis.config.watchlist import SYMBOLS
 
+# Set ENV_FILE for downstream imports
+os.environ['ENV_FILE'] = os.getenv('ENV_FILE', '.env')
+
+# Load environment variables from ENV_FILE or default to .env
+env_file = os.getenv('ENV_FILE', '.env')
+load_dotenv(env_file, override=True)
+
 # Add parent directory to path to import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.api_config import UW_API_TOKEN, UW_BASE_URL, DARKPOOL_TICKER_ENDPOINT, DEFAULT_HEADERS
-
-# Load environment variables
-load_dotenv()
 
 # Database configuration
 DB_CONFIG = {

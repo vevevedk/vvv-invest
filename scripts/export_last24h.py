@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import pandas as pd
 import psycopg2
+import argparse
 
 # Load environment variables
 load_dotenv(dotenv_path=os.getenv('ENV_FILE', '.env'))
@@ -11,8 +12,12 @@ EXPORT_DIR = 'exports'
 os.makedirs(EXPORT_DIR, exist_ok=True)
 
 def main():
+    parser = argparse.ArgumentParser(description="Export news and dark pool data for the last N days.")
+    parser.add_argument('--days', type=int, default=1, help='Number of days to export (default: 1)')
+    args = parser.parse_args()
+
     now = datetime.utcnow()
-    start_dt = now - timedelta(days=1)
+    start_dt = now - timedelta(days=args.days)
     end_dt = now
     timestamp = now.strftime('%Y%m%d_%H%M%S')
     db_params = {
@@ -39,7 +44,7 @@ def main():
         }
         for name, query in queries.items():
             df = pd.read_sql_query(query, conn, params=(start_dt.isoformat(), end_dt.isoformat()))
-            out_path = os.path.join(EXPORT_DIR, f"{name}_last24h_{timestamp}.csv")
+            out_path = os.path.join(EXPORT_DIR, f"{name}_last{args.days}d_{timestamp}.csv")
             df.to_csv(out_path, index=False)
             print(f"Exported {len(df)} rows to {out_path}")
         conn.close()

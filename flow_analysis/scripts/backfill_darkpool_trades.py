@@ -20,19 +20,23 @@ import os
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
-from flow_analysis.config.api_config import (
-    UW_BASE_URL, DARKPOOL_RECENT_ENDPOINT,
-    DEFAULT_HEADERS, REQUEST_TIMEOUT, REQUEST_RATE_LIMIT
-)
-from flow_analysis.config.watchlist import SYMBOLS
-
 # Parse command-line arguments for env file
 parser = argparse.ArgumentParser()
 parser.add_argument('--env-file', default='.env', help='Path to environment file')
 args = parser.parse_args()
 
+# Set ENV_FILE for downstream imports
+os.environ['ENV_FILE'] = args.env_file
+
 # Load environment variables from the specified file
-load_dotenv(args.env_file)
+env_file = os.getenv("ENV_FILE", ".env")
+load_dotenv(env_file, override=True)
+
+from flow_analysis.config.api_config import (
+    UW_BASE_URL, DARKPOOL_RECENT_ENDPOINT,
+    DEFAULT_HEADERS, REQUEST_TIMEOUT, REQUEST_RATE_LIMIT
+)
+from flow_analysis.config.watchlist import SYMBOLS
 
 # Load DB config from environment
 DB_CONFIG = {

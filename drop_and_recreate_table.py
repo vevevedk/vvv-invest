@@ -2,8 +2,12 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 
-# Load environment variables from .env.prod
-load_dotenv(dotenv_path='.env.prod')
+# Set ENV_FILE for downstream imports
+os.environ['ENV_FILE'] = os.getenv('ENV_FILE', '.env')
+
+# Load environment variables from ENV_FILE or default to .env
+env_file = os.getenv('ENV_FILE', '.env')
+load_dotenv(env_file, override=True)
 
 # Database connection parameters from environment variables
 db_params = {

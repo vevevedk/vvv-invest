@@ -5,8 +5,8 @@ Database configuration settings
 import os
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+env_file = os.getenv("ENV_FILE", ".env")
+load_dotenv(env_file, override=True)
 
 # Database configuration
 DB_CONFIG = {

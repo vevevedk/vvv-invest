@@ -1,8 +1,8 @@
 import os
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+env_file = os.getenv("ENV_FILE", ".env")
+load_dotenv(env_file, override=True)
 
 # News API Configuration
 UW_API_TOKEN = os.getenv("UW_API_TOKEN")

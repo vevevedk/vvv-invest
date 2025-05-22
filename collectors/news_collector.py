@@ -21,7 +21,8 @@ from flow_analysis.config.api_config import (
     UW_API_TOKEN,
     NEWS_ENDPOINT,
     DEFAULT_HEADERS,
-    REQUEST_TIMEOUT
+    REQUEST_TIMEOUT,
+    UW_BASE_URL
 )
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ class NewsCollector(BaseCollector):
     
     def __init__(self):
         super().__init__()
-        self.endpoint = NEWS_ENDPOINT
+        self.endpoint = f"{UW_BASE_URL}{NEWS_ENDPOINT}"
         self.headers = DEFAULT_HEADERS
         self.timeout = REQUEST_TIMEOUT
         self.session = requests.Session()

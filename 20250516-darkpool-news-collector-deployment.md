@@ -1,4 +1,4 @@
-# 2025-05-16 Dark Pool & News Collector Deployment Summary
+# 2025-05-16 Dark Pool & News Collector Deployment Summary (Updated)
 
 ## Overview
 This document summarizes the deployment, troubleshooting, and validation process for the dark pool and news collectors on both local and production environments. It is intended as a reference for future maintenance and improvements.
@@ -8,73 +8,105 @@ This document summarizes the deployment, troubleshooting, and validation process
 ## Key Steps & Milestones
 
 ### 1. **Preparation & Code Sync**
-- Ensured all code (including migration scripts and collector updates) was committed and pushed to the `master` branch.
-- Switched production from the obsolete `main` branch to `master` and deleted `main` locally and remotely to avoid confusion.
-- Pulled the latest code on the production server and confirmed the working tree was clean.
-- **Cleaned up systemd service files:** Only the dedicated `*-worker.service` and `*-beat.service` files are used for each collector. Monolithic service files (`darkpool-collector.service`, `news-collector.service`, `collectors.service`, `collectors-beat.service`) have been removed for clarity and best practice.
+- All code (including migration scripts and collector updates) is committed and pushed to the `master` branch.
+- Both local and production environments are in sync with the latest code.
+- Only the dedicated `*-worker.service` and `*-beat.service` files are used for each collector. Monolithic service files have been removed.
 
-### 2. **Database Migration**
-- Created and ran a migration script to alter the `sentiment` column in `trading.news_headlines` from `double precision` to `text` to match API data types.
-- Confirmed successful migration on both local and production databases.
+### 2. **Celery App Split**
+- `celery_app.py` now defines two separate Celery apps:
+  - `news_app` for news collector tasks and scheduling.
+  - `darkpool_app` for dark pool collector tasks and scheduling.
+- Each beat service now only schedules its own collector's tasks, preventing duplicate or cross-scheduling.
 
 ### 3. **Systemd Service Configuration**
-- For each collector (news and dark pool), only two services are used:
-  - `*-worker.service` (Celery worker)
-  - `*-beat.service` (Celery beat/scheduler)
-- Each service uses the correct user, group, working directory, environment file, and venv path for Celery.
-- Unique Celery node names are assigned (using `-n news_collector@%h` and `-n darkpool_collector@%h`) to avoid duplicate nodename warnings.
-- Reloaded systemd and restarted both services.
-- Verified both collectors were running and ready via `systemctl status` and `journalctl` logs.
+- **news-collector-worker.service**
+  ```
+  ExecStart=/bin/bash -c 'export UW_API_TOKEN=9dd00196-7f7f-4e2c-ad7c-2c2cb6a33999 && /opt/darkpool_collector/venv/bin/celery -A celery_app.news_app worker --loglevel=info -Q news_queue -n news_worker@%h'
+  ```
+- **news-collector-beat.service**
+  ```
+  ExecStart=/bin/bash -c 'export UW_API_TOKEN=9dd00196-7f7f-4e2c-ad7c-2c2cb6a33999 && /opt/darkpool_collector/venv/bin/celery -A celery_app.news_app beat --loglevel=info --schedule=/opt/darkpool_collector/celerybeat-news-schedule.db'
+  ```
+- **darkpool-collector-worker.service**
+  ```
+  ExecStart=/bin/bash -c 'export UW_API_TOKEN=9dd00196-7f7f-4e2c-ad7c-2c2cb6a33999 && /opt/darkpool_collector/venv/bin/celery -A celery_app.darkpool_app worker --loglevel=info -Q darkpool_queue -n darkpool_worker@%h'
+  ```
+- **darkpool-collector-beat.service**
+  ```
+  ExecStart=/bin/bash -c 'export UW_API_TOKEN=9dd00196-7f7f-4e2c-ad7c-2c2cb6a33999 && /opt/darkpool_collector/venv/bin/celery -A celery_app.darkpool_app beat --loglevel=info --schedule=/opt/darkpool_collector/celerybeat-darkpool-schedule.db'
+  ```
+- After editing, reload systemd and restart all services:
+  ```sh
+  sudo systemctl daemon-reload
+  sudo systemctl restart news-collector-worker.service news-collector-beat.service darkpool-collector-worker.service darkpool-collector-beat.service
+  ```
 
-### 4. **Environment Variable Troubleshooting**
-- Ensured `UW_API_TOKEN` and other secrets were present in `.env.prod`.
-- Used `export ENV_FILE=.env.prod` and/or `set -a; source .env.prod; set +a` to guarantee environment variables were available to Python subprocesses.
-- Confirmed environment loading with a test Python one-liner.
+### 4. **Testing & Validation**
+- **Manual Task Triggering:**
+  - News:  
+    ```sh
+    export UW_API_TOKEN=9dd00196-7f7f-4e2c-ad7c-2c2cb6a33999 && ENV_FILE=.env.prod celery -A celery_app.news_app call celery_app.run_news_collector_task
+    ```
+  - Dark Pool:  
+    ```sh
+    export UW_API_TOKEN=9dd00196-7f7f-4e2c-ad7c-2c2cb6a33999 && ENV_FILE=.env.prod celery -A celery_app.darkpool_app call celery_app.run_darkpool_collector_task
+    ```
+- **Monitor logs:**
+  ```sh
+  sudo journalctl -u news-collector-worker.service -n 50
+  sudo journalctl -u news-collector-beat.service -n 50
+  sudo journalctl -u darkpool-collector-worker.service -n 50
+  sudo journalctl -u darkpool-collector-beat.service -n 50
+  ```
+- **Validate data:**  
+  Use the validation script to check for new rows in the last 24 hours.
 
-### 5. **Collector Backfill & Validation**
-- Ran both collectors in backfill mode for the last 24 hours using the correct environment loading method.
-- Used a validation script to check the number of rows inserted in the last 24 hours for both `news_headlines` and `darkpool_trades`.
-- Confirmed news headlines were being collected and inserted; dark pool trades required further troubleshooting (no new rows in last 24h).
-
-### 6. **Export & Analysis**
-- Used the export script to generate CSVs of the last 24 hours of data for both tables.
-- Confirmed the workflow for local and production export and analysis.
+### 5. **Ongoing Monitoring**
+- Let the beat services run for at least 10–15 minutes and confirm both collectors are being triggered on schedule.
+- Continue to monitor logs and database for expected data.
 
 ---
 
-## Issues & Solutions
-- **Environment variables not set:** Fixed by exporting or sourcing `.env.prod` before running scripts.
-- **Collector method signature mismatch:** Ensured production code was up to date and supported date range arguments.
-- **Celery duplicate nodename warning:** Resolved by assigning unique node names in systemd service files.
-- **No new dark pool data:** Validated with logs and DB queries; further troubleshooting required if expected data is missing.
-- **Service file confusion:** Resolved by removing monolithic service files and using only the dedicated worker and beat service files for each collector.
+## Issues & Solutions (Updated)
+- **Duplicate scheduling:** Resolved by splitting Celery apps and updating service files.
+- **Environment variables:** 
+  - Resolved by explicitly setting `UW_API_TOKEN` in service files using `/bin/bash -c 'export ... && ...'` syntax.
+  - Updated news collector to use main API config from `flow_analysis/config/api_config.py` instead of separate config.
+- **Celery node name warnings:** Use unique node names in service files.
+- **No new dark pool data:** If the market is closed, this is expected; otherwise, check logs and API.
+- **Rate limiting:** Need to implement rate limiting improvements as per `20250519-colector-fixes.md` after market hours.
 
 ---
 
-## Useful Commands
+## Current Status (Updated 2025-05-20)
+- ✅ Services are running properly with correct configuration
+- ✅ Environment variables are properly set in service files
+- ✅ News collector updated to use main API config
+- ⏳ Waiting for market hours to end before:
+  - Validating data collection
+  - Implementing rate limiting improvements
+  - Making any further changes
+
+---
+
+## Useful Commands (Updated)
 
 **Validate data for last 24h:**
 ```sh
 ENV_FILE=.env.prod python3 scripts/validate_data_last24h.py
 ```
-
 **Backfill news headlines (last 24h):**
 ```sh
-set -a; source .env.prod; set +a
-python3 -c "from collectors.news_collector import NewsCollector; from datetime import datetime, timedelta; now=datetime.utcnow(); start=(now-timedelta(days=1)).strftime('%Y-%m-%d'); end=now.strftime('%Y-%m-%d'); NewsCollector().collect(start_date=start, end_date=end)"
+export UW_API_TOKEN=9dd00196-7f7f-4e2c-ad7c-2c2cb6a33999 && ENV_FILE=.env.prod python3 -c "from collectors.news_collector import NewsCollector; from datetime import datetime, timedelta; now=datetime.utcnow(); start=(now-timedelta(days=1)).strftime('%Y-%m-%d'); end=now.strftime('%Y-%m-%d'); NewsCollector().collect(start_date=start, end_date=end)"
 ```
-
 **Backfill dark pool trades (last 24h):**
 ```sh
-set -a; source .env.prod; set +a
-python3 -c "from collectors.darkpool_collector import DarkPoolCollector; from datetime import datetime, timedelta; now=datetime.utcnow(); start=(now-timedelta(days=1)).strftime('%Y-%m-%d'); end=now.strftime('%Y-%m-%d'); DarkPoolCollector().collect_darkpool_trades(start_date=start, end_date=end, incremental=False)"
+export UW_API_TOKEN=9dd00196-7f7f-4e2c-ad7c-2c2cb6a33999 && ENV_FILE=.env.prod python3 -c "from collectors.darkpool_collector import DarkPoolCollector; from datetime import datetime, timedelta; now=datetime.utcnow(); start=(now-timedelta(days=1)).strftime('%Y-%m-%d'); end=now.strftime('%Y-%m-%d'); DarkPoolCollector().collect_darkpool_trades(start_date=start, end_date=end, incremental=False)"
 ```
-
 **Export last 24h to CSV:**
 ```sh
 ENV_FILE=.env.prod python3 scripts/export_last24h.py
 ```
-
 **Monitor logs:**
 ```sh
 journalctl -u news-collector-worker.service -f --no-pager
@@ -85,7 +117,9 @@ journalctl -u darkpool-collector-beat.service -f --no-pager
 
 ---
 
-## Next Steps
-- Continue monitoring collectors and database for expected data.
-- Troubleshoot dark pool collector if no new data is being inserted.
-- Use this document as a reference for future deployments and troubleshooting. 
+## Next Steps (Updated)
+- [ ] Wait for market hours to end
+- [ ] Validate data collection after market hours
+- [ ] Implement rate limiting improvements from `20250519-colector-fixes.md`
+- [ ] Monitor logs and validate data collection
+- [ ] Use this document as a reference for future deployments and troubleshooting. 

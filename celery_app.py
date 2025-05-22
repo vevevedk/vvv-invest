@@ -6,7 +6,8 @@ from collectors.darkpool_tasks import run_darkpool_collector, backfill_qqq_trade
 from collectors.news_tasks import run_news_collector
 
 # Load environment variables
-load_dotenv()
+env_file = os.getenv("ENV_FILE", ".env")
+load_dotenv(env_file, override=True)
 
 # Create Celery apps
 darkpool_app = Celery('darkpool_collector')

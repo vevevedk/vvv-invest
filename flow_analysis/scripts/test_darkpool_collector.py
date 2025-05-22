@@ -15,6 +15,13 @@ import psycopg2
 from dotenv import load_dotenv
 from psycopg2.extras import execute_values
 
+# Set ENV_FILE for downstream imports
+os.environ['ENV_FILE'] = os.getenv('ENV_FILE', '.env')
+
+# Load environment variables from ENV_FILE or default to .env
+env_file = os.getenv('ENV_FILE', '.env')
+load_dotenv(env_file, override=True)
+
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
