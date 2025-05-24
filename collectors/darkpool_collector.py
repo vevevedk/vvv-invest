@@ -149,16 +149,24 @@ class DarkPoolCollector(BaseCollector):
     def _save_trades_to_db(self, symbol, trades):
         inserted = 0
         if not trades:
+            self.logger.info(f"No trades to insert for {symbol}")
             return 0
+            
+        self.logger.info(f"Attempting to insert {len(trades)} trades for {symbol}")
+        
         try:
             with psycopg2.connect(**DB_CONFIG) as conn:
+                self.logger.info(f"Successfully connected to database for {symbol}")
                 with conn.cursor() as cur:
-                    for trade in trades:
+                    for i, trade in enumerate(trades, 1):
                         try:
                             # Convert executed_at to UTC if it's not already
                             executed_at = trade.get('executed_at')
                             if isinstance(executed_at, str):
                                 executed_at = datetime.fromisoformat(executed_at.replace('Z', '+00:00'))
+                            
+                            # Log trade details before insert
+                            self.logger.debug(f"Processing trade {i}/{len(trades)} for {symbol}: tracking_id={trade.get('tracking_id')}, executed_at={executed_at}")
                             
                             cur.execute(f'''
                                 INSERT INTO {SCHEMA_NAME}.{TABLE_NAME} (
@@ -181,9 +189,27 @@ class DarkPoolCollector(BaseCollector):
                                 'collection_time': datetime.utcnow(),
                             })
                             inserted += 1
+                            conn.commit()
+                            self.logger.debug(f"Successfully inserted trade {i} for {symbol}")
+                        except psycopg2.Error as e:
+                            self.logger.error(f"PostgreSQL error for {symbol} trade {i}: {str(e)}")
+                            self.logger.error(f"Error code: {e.pgcode}, Error message: {e.pgerror}")
+                            self.logger.error(f"Trade data: {trade}")
+                            conn.rollback()
+                            continue
                         except Exception as e:
-                            self.logger.error(f"DB insert error for {symbol}: {str(e)}")
-                conn.commit()
+                            self.logger.error(f"Unexpected error for {symbol} trade {i}: {str(e)}")
+                            self.logger.error(f"Error type: {type(e).__name__}")
+                            self.logger.error(f"Trade data: {trade}")
+                            conn.rollback()
+                            continue
+                            
+                self.logger.info(f"Completed processing {len(trades)} trades for {symbol}. Successfully inserted: {inserted}")
+        except psycopg2.Error as e:
+            self.logger.error(f"PostgreSQL connection error: {str(e)}")
+            self.logger.error(f"Error code: {e.pgcode}, Error message: {e.pgerror}")
         except Exception as e:
-            self.logger.error(f"DB connection error: {str(e)}")
+            self.logger.error(f"Unexpected database connection error: {str(e)}")
+            self.logger.error(f"Error type: {type(e).__name__}")
+            
         return inserted 
