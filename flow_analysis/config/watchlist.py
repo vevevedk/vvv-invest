@@ -47,4 +47,4 @@ HISTORICAL_WINDOW = "5D"      # for historical comparison
 REALTIME_WINDOW = "5M"       # for real-time monitoring
 
 # Timezone
-EASTERN = pytz.timezone('US/Eastern') 
+EASTERN = pytz.timezone('America/New_York') 
