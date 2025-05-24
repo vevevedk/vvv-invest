@@ -30,6 +30,7 @@ darkpool_app.conf.beat_schedule = {
     'run-darkpool-collector-every-5-mins': {
         'task': 'celery_app.run_darkpool_collector_task',
         'schedule': crontab(minute='*/5'),  # Every 5 minutes
+        'options': {'queue': 'darkpool_queue'},  # Ensure task goes to correct queue
     },
 }
 
@@ -39,6 +40,7 @@ news_app.conf.beat_schedule = {
     'run-news-collector-every-5-mins': {
         'task': 'celery_app.run_news_collector_task',
         'schedule': crontab(minute='*/5'),  # Every 5 minutes
+        'options': {'queue': 'news_queue'},  # Ensure task goes to correct queue
     },
 }
 
