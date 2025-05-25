@@ -10,16 +10,18 @@ from flow_analysis.config.db_config import DB_CONFIG, SCHEMA_NAME, TABLE_NAME
 from flow_analysis.config.watchlist import SYMBOLS
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import os
 
 class DarkPoolCollector(BaseCollector):
     def __init__(self):
         super().__init__()
         self.ny_tz = pytz.timezone('America/New_York')
-        # Only collect for SPY and QQQ
-        self.symbols = ['SPY', 'QQQ']
-        # Log API token status (first 4 chars only for security)
+        # Use the SYMBOLS list from the watchlist config for all target tickers
+        self.symbols = SYMBOLS  # Update the watchlist to add/remove symbols to fetch
+        # Log API token status (first 6 chars only for security)
         token = DEFAULT_HEADERS.get('Authorization', '').split()[-1]
-        self.logger.info(f"API Token configured: {token[:4]}...")
+        self.logger.info(f"API Token configured: {token[:6]}... (length: {len(token)})")
+        self.logger.info(f"Loaded UW_API_TOKEN (first 6): {os.getenv('UW_API_TOKEN', '')[:6]}...")
 
     def is_market_open(self):
         """Check if US stock market is currently open."""
@@ -112,6 +114,8 @@ class DarkPoolCollector(BaseCollector):
                         params["newer_than"] = newer_than
                     url = f"{UW_BASE_URL}/darkpool/{symbol}"
                     self.logger.debug(f"Requesting: {url} params={params}")
+                    # Log the headers before making the request
+                    self.logger.info(f"Request headers: {DEFAULT_HEADERS}")
                     try:
                         start_time = time.time()
                         response = session.get(url, headers=DEFAULT_HEADERS, params=params, timeout=REQUEST_TIMEOUT)
