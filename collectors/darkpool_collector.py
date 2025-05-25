@@ -151,13 +151,48 @@ class DarkPoolCollector(BaseCollector):
         if not trades:
             self.logger.info(f"No trades to insert for {symbol}")
             return 0
-            
+        
         self.logger.info(f"Attempting to insert {len(trades)} trades for {symbol}")
+
+        # Track missing optional fields
+        optional_fields = [
+            'trade_settlement', 'trade_code', 'ext_hour_sold_codes',
+            'sale_cond_codes', 'nbbo_ask_quantity', 'nbbo_bid_quantity'
+        ]
+        missing_counts = {field: 0 for field in optional_fields}
         
         try:
             with psycopg2.connect(**DB_CONFIG) as conn:
                 self.logger.info(f"Successfully connected to database for {symbol}")
                 with conn.cursor() as cur:
+                    # Create schema and table if they don't exist
+                    cur.execute("""
+                        CREATE SCHEMA IF NOT EXISTS trading;
+                        
+                        CREATE TABLE IF NOT EXISTS trading.darkpool_trades (
+                            id SERIAL PRIMARY KEY,
+                            tracking_id BIGINT NOT NULL UNIQUE,
+                            symbol VARCHAR(10) NOT NULL,
+                            price NUMERIC NOT NULL,
+                            size INTEGER NOT NULL,
+                            volume NUMERIC,
+                            premium NUMERIC,
+                            executed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                            nbbo_ask NUMERIC,
+                            nbbo_bid NUMERIC,
+                            nbbo_ask_quantity INTEGER,
+                            nbbo_bid_quantity INTEGER,
+                            market_center VARCHAR(50),
+                            sale_cond_codes VARCHAR(50),
+                            ext_hour_sold_codes VARCHAR(50),
+                            trade_code VARCHAR(50),
+                            trade_settlement VARCHAR(50),
+                            canceled BOOLEAN,
+                            collection_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
+                    conn.commit()
+                    
                     for i, trade in enumerate(trades, 1):
                         try:
                             # Convert executed_at to UTC if it's not already
@@ -165,14 +200,19 @@ class DarkPoolCollector(BaseCollector):
                             if isinstance(executed_at, str):
                                 executed_at = datetime.fromisoformat(executed_at.replace('Z', '+00:00'))
                             
+                            # Log missing optional fields for this trade
+                            for field in optional_fields:
+                                if trade.get(field) is None:
+                                    missing_counts[field] += 1
+
                             # Log trade details before insert
                             self.logger.debug(f"Processing trade {i}/{len(trades)} for {symbol}: tracking_id={trade.get('tracking_id')}, executed_at={executed_at}")
                             
                             cur.execute(f'''
                                 INSERT INTO {SCHEMA_NAME}.{TABLE_NAME} (
-                                    tracking_id, symbol, size, price, volume, premium, executed_at, nbbo_ask, nbbo_bid, market_center, sale_cond_codes, collection_time
+                                    tracking_id, symbol, size, price, volume, premium, executed_at, nbbo_ask, nbbo_bid, market_center, sale_cond_codes, ext_hour_sold_codes, trade_code, trade_settlement, canceled, collection_time
                                 ) VALUES (
-                                    %(tracking_id)s, %(symbol)s, %(size)s, %(price)s, %(volume)s, %(premium)s, %(executed_at)s, %(nbbo_ask)s, %(nbbo_bid)s, %(market_center)s, %(sale_cond_codes)s, %(collection_time)s
+                                    %(tracking_id)s, %(symbol)s, %(size)s, %(price)s, %(volume)s, %(premium)s, %(executed_at)s, %(nbbo_ask)s, %(nbbo_bid)s, %(market_center)s, %(sale_cond_codes)s, %(ext_hour_sold_codes)s, %(trade_code)s, %(trade_settlement)s, %(canceled)s, %(collection_time)s
                                 ) ON CONFLICT (tracking_id) DO NOTHING
                             ''', {
                                 'tracking_id': trade.get('tracking_id'),
@@ -186,6 +226,10 @@ class DarkPoolCollector(BaseCollector):
                                 'nbbo_bid': trade.get('nbbo_bid'),
                                 'market_center': trade.get('market_center'),
                                 'sale_cond_codes': trade.get('sale_cond_codes'),
+                                'ext_hour_sold_codes': trade.get('ext_hour_sold_codes'),
+                                'trade_code': trade.get('trade_code'),
+                                'trade_settlement': trade.get('trade_settlement'),
+                                'canceled': trade.get('canceled', False),
                                 'collection_time': datetime.utcnow(),
                             })
                             inserted += 1
@@ -203,7 +247,10 @@ class DarkPoolCollector(BaseCollector):
                             self.logger.error(f"Trade data: {trade}")
                             conn.rollback()
                             continue
-                            
+                    # Log summary of missing optional fields for this batch
+                    for field, count in missing_counts.items():
+                        if count > 0:
+                            self.logger.info(f"{count} out of {len(trades)} trades missing optional field '{field}' for {symbol}")
                 self.logger.info(f"Completed processing {len(trades)} trades for {symbol}. Successfully inserted: {inserted}")
         except psycopg2.Error as e:
             self.logger.error(f"PostgreSQL connection error: {str(e)}")
