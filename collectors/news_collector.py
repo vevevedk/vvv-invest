@@ -156,6 +156,22 @@ class NewsCollector(BaseCollector):
         processed_articles = []
         for article in data:
             try:
+                # Convert sentiment string to numeric value
+                sentiment_str = article.get('sentiment', 'neutral')
+                sentiment_value = {
+                    'neutral': 0.0,
+                    'positive': 1.0,
+                    'negative': -1.0
+                }.get(sentiment_str, 0.0)  # Default to neutral if unknown
+
+                # Convert impact_score to numeric value
+                impact_str = article.get('impact_score', 'low')
+                impact_value = {
+                    'high': 10.0,
+                    'medium': 5.0,
+                    'low': 1.0
+                }.get(impact_str, 1.0)  # Default to low if unknown
+
                 processed_article = {
                     'headline': article.get('headline'),
                     'content': article.get('meta', {}).get('additional_info', ''),
@@ -164,8 +180,8 @@ class NewsCollector(BaseCollector):
                     'source': article.get('source'),
                     'symbols': article.get('tickers', []),
                     'collected_at': datetime.utcnow().isoformat(),
-                    'sentiment': article.get('sentiment'),
-                    'impact_score': article.get('impact_score'),
+                    'sentiment': sentiment_value,
+                    'impact_score': impact_value,
                 }
                 processed_articles.append(processed_article)
             except Exception as e:
