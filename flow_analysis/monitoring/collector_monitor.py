@@ -4,7 +4,7 @@ Monitoring module for tracking collector status and health.
 
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 import psycopg2
 from psycopg2.extras import DictCursor
@@ -53,7 +53,7 @@ class CollectorMonitor:
             raise ValueError(f"Unknown collector type: {collector_type}")
             
         collector = self.collectors[collector_type]
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
         
         try:
             with psycopg2.connect(**self.db_config) as conn:
@@ -77,6 +77,8 @@ class CollectorMonitor:
                         }
                     
                     last_update = result['collected_at']
+                    if last_update.tzinfo is None:
+                        last_update = last_update.replace(tzinfo=timezone.utc)
                     time_diff = (current_time - last_update).total_seconds()
                     
                     if time_diff > collector['interval'] * 2:
