@@ -286,6 +286,7 @@ class NewsCollector:
                     continue
                     
             if records:
+                logger.info(f"About to insert {len(records)} records: {records}")
                 # Insert records using raw psycopg2 connection
                 raw_conn = self.engine.raw_connection()
                 try:
@@ -296,7 +297,6 @@ class NewsCollector:
                             symbols, sentiment, impact_score, collected_at
                         ) VALUES %s
                         """
-                        # Convert records to tuples in the correct order
                         values = [(
                             record['headline'],
                             record['published_at'],
@@ -307,11 +307,14 @@ class NewsCollector:
                             record['impact_score'],
                             record['collected_at']
                         ) for record in records]
-                        
-                        # Use execute_values for bulk insert
+                        logger.info(f"Executing insert_sql: {insert_sql} with values: {values}")
                         execute_values(cur, insert_sql, values)
+                        logger.info("Insert executed, attempting commit...")
                         raw_conn.commit()
+                        logger.info("Commit successful.")
                         logger.info(f"Saved {len(records)} news items to database")
+                except Exception as e:
+                    logger.error(f"Error during insert or commit: {str(e)}")
                 finally:
                     raw_conn.close()
                     
