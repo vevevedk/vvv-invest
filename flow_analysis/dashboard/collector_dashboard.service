@@ -1,0 +1,16 @@
+[Unit]
+Description=Collector Dashboard Service
+After=network.target
+
+[Service]
+User=darkpool
+Group=darkpool
+WorkingDirectory=/opt/darkpool_collector
+Environment="PATH=/opt/darkpool_collector/venv/bin"
+Environment="ENV_FILE=.env.prod"
+ExecStart=/opt/darkpool_collector/venv/bin/python -m flow_analysis.dashboard.app
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target 

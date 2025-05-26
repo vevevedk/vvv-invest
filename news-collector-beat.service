@@ -8,8 +8,9 @@ User=avxz
 Group=avxz
 WorkingDirectory=/opt/darkpool_collector
 Environment="PATH=/opt/darkpool_collector/venv/bin"
+Environment="ENV_FILE=/opt/darkpool_collector/.env.prod"
 EnvironmentFile=/opt/darkpool_collector/.env.prod
-ExecStart=/bin/bash -c 'export UW_API_TOKEN=9dd00196-7f7f-4e2c-ad7c-2c2cb6a33999 && /opt/darkpool_collector/venv/bin/celery -A celery_app.news_app beat --loglevel=info --schedule=/opt/darkpool_collector/celerybeat-news-schedule.db'
+ExecStart=/opt/darkpool_collector/venv/bin/celery -A celery_app.news_app beat --loglevel=info --schedule=/opt/darkpool_collector/celerybeat-news-schedule.db
 Restart=always
 RestartSec=10
 
