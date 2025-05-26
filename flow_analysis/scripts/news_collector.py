@@ -199,13 +199,20 @@ class NewsCollector:
                     continue
                 
                 # Process the news item
+                sentiment_str = item.get('sentiment', 'neutral')
+                sentiment_value = {
+                    'neutral': 0.0,
+                    'positive': 1.0,
+                    'negative': -1.0
+                }.get(sentiment_str, 0.0)
+
                 processed_news.append({
                     'headline': headline,
                     'published_at': published_at,
                     'source': item.get('source', 'Unknown'),
                     'url': item.get('url', ''),
                     'symbols': symbols,
-                    'sentiment': item.get('sentiment', 0.0),
+                    'sentiment': sentiment_value,
                     'impact_score': item.get('impact_score', 0.0)
                 })
                 
