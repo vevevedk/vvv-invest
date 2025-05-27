@@ -3,20 +3,6 @@ Unusual Whales API Configuration
 """
 
 import os
-from dotenv import load_dotenv
-
-# Determine which env file to load
-env_file = os.getenv("ENV_FILE")  # e.g., ".env" or ".env.prod"
-if not env_file:
-    app_env = os.getenv("APP_ENV")
-    if app_env == "production":
-        env_file = ".env.prod"
-    elif app_env == "staging":
-        env_file = ".env.staging"
-    else:
-        env_file = ".env"
-
-load_dotenv(env_file)
 
 # API Configuration
 UW_API_TOKEN = os.getenv('UW_API_TOKEN')

@@ -26,6 +26,20 @@ from contextlib import contextmanager
 import backoff
 from tenacity import retry, stop_after_attempt, wait_exponential
 import re
+from dotenv import load_dotenv
+
+# Parse --prod flag before any other imports
+parser = argparse.ArgumentParser(add_help=False)
+parser.add_argument('--prod', action='store_true', help='Use production database (.env.prod)')
+args, unknown = parser.parse_known_args()
+
+if args.prod:
+    load_dotenv('.env.prod', override=True)
+else:
+    load_dotenv('.env', override=True)
+
+# Re-parse arguments with help for the main script
+sys.argv = [sys.argv[0]] + unknown
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
@@ -35,7 +49,7 @@ from flow_analysis.config.api_config import (
     UW_API_TOKEN, UW_BASE_URL, NEWS_ENDPOINT,
     DEFAULT_HEADERS, REQUEST_TIMEOUT, REQUEST_RATE_LIMIT
 )
-from flow_analysis.config.db_config import DB_CONFIG, SCHEMA_NAME
+from flow_analysis.config.db_config import get_db_config, SCHEMA_NAME
 from flow_analysis.config.watchlist import MARKET_OPEN, MARKET_CLOSE, SYMBOLS
 from flow_analysis.scripts.monitoring import MetricsCollector, HealthChecker, create_monitoring_tables
 from flow_analysis.scripts.data_validation import DataValidator, create_validation_tables
@@ -72,6 +86,7 @@ class NewsCollector:
     
     def __init__(self):
         """Initialize the collector."""
+        logger.info(f"DB connection params: {get_db_config()}")
         self.base_url = UW_BASE_URL
         self.eastern = pytz.timezone('US/Eastern')
         self.db_conn = None
@@ -79,13 +94,14 @@ class NewsCollector:
         self.connect_db()
         
         # Initialize monitoring and validation
-        self.metrics_collector = MetricsCollector(DB_CONFIG, UW_API_TOKEN)
-        self.health_checker = HealthChecker(DB_CONFIG, UW_API_TOKEN)
-        self.data_validator = DataValidator(DB_CONFIG)
+        db_config = get_db_config()
+        self.metrics_collector = MetricsCollector(db_config, UW_API_TOKEN)
+        self.health_checker = HealthChecker(db_config, UW_API_TOKEN)
+        self.data_validator = DataValidator(db_config)
         
         # Create necessary tables
-        create_monitoring_tables(DB_CONFIG)
-        create_validation_tables(DB_CONFIG)
+        create_monitoring_tables(db_config)
+        create_validation_tables(db_config)
         self._create_news_table()
         
         # Initialize duplicate detection
@@ -94,9 +110,10 @@ class NewsCollector:
         
     def _create_engine(self):
         """Create SQLAlchemy engine with connection pooling"""
+        db_config = get_db_config()
         return create_engine(
-            f"postgresql://{DB_CONFIG['user']}:{DB_CONFIG['password']}@"
-            f"{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['dbname']}",
+            f"postgresql://{db_config['user']}:{db_config['password']}@"
+            f"{db_config['host']}:{db_config['port']}/{db_config['dbname']}",
             poolclass=QueuePool,
             pool_size=5,
             max_overflow=10,
@@ -127,7 +144,7 @@ class NewsCollector:
             max_time=300
         )
         def _connect():
-            self.db_conn = psycopg2.connect(**DB_CONFIG)
+            self.db_conn = psycopg2.connect(**get_db_config())
             logger.info("Successfully connected to database")
             
         try:

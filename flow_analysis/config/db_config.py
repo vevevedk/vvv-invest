@@ -2,20 +2,18 @@
 Database Configuration
 """
 import os
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 # Database configuration
-DB_CONFIG = {
-    'dbname': os.getenv('DB_NAME', 'trading_data'),
-    'user': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', ''),
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'port': os.getenv('DB_PORT', '5432'),
-    'sslmode': os.getenv('DB_SSLMODE', 'disable')  # Changed from DB_SSL_MODE to DB_SSLMODE
-}
+
+def get_db_config():
+    return {
+        'dbname': os.getenv('DB_NAME', 'trading_data'),
+        'user': os.getenv('DB_USER', 'postgres'),
+        'password': os.getenv('DB_PASSWORD', ''),
+        'host': os.getenv('DB_HOST', 'localhost'),
+        'port': os.getenv('DB_PORT', '5432'),
+        'sslmode': os.getenv('DB_SSLMODE', 'disable')
+    }
 
 # Schema and table configuration
 SCHEMA_NAME = 'trading'
