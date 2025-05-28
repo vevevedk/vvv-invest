@@ -1,0 +1,17 @@
+[Unit]
+Description=Dark Pool Collector Celery Worker
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=avxz
+Group=avxz
+WorkingDirectory=/opt/darkpool_collector
+Environment="PATH=/opt/darkpool_collector/venv/bin"
+EnvironmentFile=/opt/darkpool_collector/.env.prod
+ExecStart=/bin/bash -c 'export UW_API_TOKEN=9dd00196-7f7f-4e2c-ad7c-2c2cb6a33999 && /opt/darkpool_collector/venv/bin/celery -A celery_app.darkpool_app worker --loglevel=info -Q darkpool_queue -n darkpool_worker@%h'
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target 

@@ -1,0 +1,9 @@
+/opt/darkpool_collector/logs/news_collector.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 644 avxz avxz
+} 

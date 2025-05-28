@@ -1,0 +1,16 @@
+[Unit]
+Description=Options Flow Collector Service
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=collector
+Group=collector
+WorkingDirectory=/opt/vvv-invest
+Environment=PYTHONPATH=/opt/vvv-invest
+ExecStart=/opt/vvv-invest/venv/bin/python3 flow_analysis/scripts/options_flow_collector.py
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target 
