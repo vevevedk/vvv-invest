@@ -7,18 +7,20 @@ from flow_analysis.config.api_config import (
     UW_BASE_URL, DARKPOOL_RECENT_ENDPOINT,
     DEFAULT_HEADERS, REQUEST_TIMEOUT, REQUEST_RATE_LIMIT
 )
+from flow_analysis.config.watchlist import SYMBOLS
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def run_darkpool_collector():
-    """Run the dark pool collector to fetch and process dark pool trades."""
+def run_darkpool_collector(hours: int = 24):
+    """Run the dark pool collector to fetch and process dark pool trades for the last N hours."""
     try:
-        logger.info("Starting dark pool collector...")
+        logger.info(f"Starting dark pool collector for last {hours} hours...")
         collector = DarkPoolCollector()
-        collector.run()
-        logger.info("Dark pool collector completed successfully")
+        results = collector.collect_recent_trades(SYMBOLS, hours=hours)
+        logger.info(f"Dark pool collector completed successfully. Results: {results}")
+        return results
     except Exception as e:
         logger.error(f"Error in dark pool collector: {str(e)}", exc_info=True)
         raise
