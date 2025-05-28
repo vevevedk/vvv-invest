@@ -2,18 +2,10 @@ import pandas as pd
 from sqlalchemy import create_engine
 import os
 from datetime import datetime
-
-# Database connection setup
-DB_CONFIG = {
-    'dbname': 'defaultdb',
-    'user': 'doadmin',
-    'password': 'AVNS_SrG4Bo3B7uCNEPONkE4',
-    'host': 'vvv-trading-db-do-user-2110609-0.i.db.ondigitalocean.com',
-    'port': '25060'
-}
+from flow_analysis.config.db_config import get_db_config
 
 # Create database URL
-DATABASE_URL = f"postgresql://{DB_CONFIG['user']}:{DB_CONFIG['password']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['dbname']}"
+DATABASE_URL = f"postgresql://{get_db_config()['user']}:{get_db_config()['password']}@{get_db_config()['host']}:{get_db_config()['port']}/{get_db_config()['dbname']}"
 
 # Create engine with SSL required
 engine = create_engine(

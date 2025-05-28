@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 import psycopg2
 from psycopg2.extras import DictCursor
+from config.db_config import get_db_config
 
 # Set up logging
 logging.basicConfig(
@@ -150,9 +151,7 @@ class CollectorMonitor:
 
 def main():
     """Main function to demonstrate usage."""
-    from flow_analysis.config.env_config import DB_CONFIG
-    
-    monitor = CollectorMonitor(DB_CONFIG)
+    monitor = CollectorMonitor(get_db_config())
     
     # Check all collectors
     health = monitor.get_collector_health()

@@ -27,10 +27,10 @@ from flow_analysis.config.api_config import (
     UW_BASE_URL, DARKPOOL_RECENT_ENDPOINT,
     DEFAULT_HEADERS, REQUEST_TIMEOUT, REQUEST_RATE_LIMIT
 )
-from flow_analysis.config.db_config import DB_CONFIG, SCHEMA_NAME, TABLE_NAME
+from flow_analysis.config.db_config import get_db_config, SCHEMA_NAME, TABLE_NAME
 from flow_analysis.config.watchlist import MARKET_OPEN, MARKET_CLOSE, SYMBOLS, MARKET_HOLIDAYS
 
-print("DB_CONFIG:", DB_CONFIG)
+print("DB_CONFIG:", get_db_config())
 
 class DatabaseLogHandler(logging.Handler):
     """Custom logging handler that writes logs to the database."""
@@ -141,7 +141,7 @@ class DarkPoolCollector:
         """Connect to the database."""
         try:
             if self.db_conn is None or self.db_conn.closed:
-                self.db_conn = psycopg2.connect(**DB_CONFIG)
+                self.db_conn = psycopg2.connect(**get_db_config())
                 self.logger.info("Successfully connected to database")
         except Exception as e:
             self.logger.error(f"Error connecting to database: {str(e)}")

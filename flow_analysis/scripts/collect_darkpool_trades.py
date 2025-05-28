@@ -9,6 +9,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from flow_analysis.config.watchlist import SYMBOLS
+from flow_analysis.config.db_config import get_db_config
 
 # Set ENV_FILE for downstream imports
 os.environ['ENV_FILE'] = os.getenv('ENV_FILE', '.env')
@@ -22,17 +23,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.api_config import UW_API_TOKEN, UW_BASE_URL, DARKPOOL_TICKER_ENDPOINT, DEFAULT_HEADERS
 
 # Database configuration
-DB_CONFIG = {
-    'user': os.getenv('DB_USER'),
-    'password': os.getenv('DB_PASSWORD'),
-    'host': os.getenv('DB_HOST'),
-    'port': os.getenv('DB_PORT'),
-    'database': os.getenv('DB_NAME'),
-    'sslmode': os.getenv('DB_SSL_MODE', 'require')
-}
-
-# Create database URL
-DATABASE_URL = f"postgresql://{DB_CONFIG['user']}:{DB_CONFIG['password']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}?sslmode={DB_CONFIG['sslmode']}"
+DATABASE_URL = f"postgresql://{get_db_config()['user']}:{get_db_config()['password']}@{get_db_config()['host']}:{get_db_config()['port']}/{get_db_config()['database']}?sslmode={get_db_config()['sslmode']}"
 
 # Configure logging
 logging.basicConfig(
