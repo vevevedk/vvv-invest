@@ -10,7 +10,13 @@ load_dotenv(env_file, override=True)
 
 # Unusual Whales API configuration
 UW_API_TOKEN = os.getenv('UW_API_TOKEN')
-UW_BASE_URL = "https://api.unusualwhales.com/api/v1"  # Updated to v1 API
+UW_BASE_URL = "https://api.unusualwhales.com/api"  # Do NOT include /v1 for news endpoints
+
+# Dark Pool endpoints
+DARKPOOL_RECENT_ENDPOINT = "/darkpool/recent"
+DARKPOOL_TICKER_ENDPOINT = "/darkpool/{ticker}"
+
+# Options endpoints
 OPTION_CONTRACTS_ENDPOINT = "/options/contracts/{ticker}"
 OPTION_FLOW_ENDPOINT = "/options/flow/{ticker}"
 QUOTE_ENDPOINT = "/quotes/{symbol}"
