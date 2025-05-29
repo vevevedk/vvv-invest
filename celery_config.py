@@ -23,6 +23,7 @@ app.conf.update(
     worker_prefetch_multiplier=1,  # Process one task at a time
     task_acks_late=True,  # Only acknowledge task after completion
     task_reject_on_worker_lost=True,  # Requeue task if worker dies
+    broker_connection_retry_on_startup=True,  # Retry broker connection on startup
 )
 
 # Configure periodic tasks
