@@ -1,16 +1,16 @@
 [Unit]
 Description=News Collector Celery Beat
-After=network.target redis.service news-collector-worker.service
+After=network.target redis.service
 
 [Service]
 Type=simple
 User=avxz
 Group=avxz
 WorkingDirectory=/opt/darkpool_collector
-Environment="PATH=/opt/darkpool_collector/venv/bin"
+Environment="PATH=/opt/darkpool_collector/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="ENV_FILE=/opt/darkpool_collector/.env.prod"
 EnvironmentFile=/opt/darkpool_collector/.env.prod
-ExecStart=/opt/darkpool_collector/venv/bin/celery -A celery_app.news_app beat --loglevel=info --schedule=/opt/darkpool_collector/celerybeat-news-schedule.db
+ExecStart=/opt/darkpool_collector/venv/bin/celery -A config.celery.news_celery_app beat --loglevel=info
 Restart=always
 RestartSec=10
 

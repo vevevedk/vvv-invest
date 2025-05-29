@@ -7,9 +7,10 @@ Type=simple
 User=avxz
 Group=avxz
 WorkingDirectory=/opt/darkpool_collector
-Environment="PATH=/opt/darkpool_collector/venv/bin"
+Environment="PATH=/opt/darkpool_collector/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="ENV_FILE=/opt/darkpool_collector/.env.prod"
 EnvironmentFile=/opt/darkpool_collector/.env.prod
-ExecStart=/bin/bash -c 'export UW_API_TOKEN=9dd00196-7f7f-4e2c-ad7c-2c2cb6a33999 && /opt/darkpool_collector/venv/bin/celery -A celery_app.darkpool_app worker --loglevel=info -Q darkpool_queue -n darkpool_worker@%h'
+ExecStart=/opt/darkpool_collector/venv/bin/celery -A config.celery.celery_app worker --loglevel=info -Q dark_pool_queue -n dark_pool_worker@%h
 Restart=always
 RestartSec=10
 
