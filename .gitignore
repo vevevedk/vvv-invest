@@ -212,3 +212,4 @@ cython_debug/
 
 # Ignore exports folder and its contents
 exports/
+logs/*.log*
