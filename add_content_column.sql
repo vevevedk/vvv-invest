@@ -1,1 +1,0 @@
-ALTER TABLE trading.news_headlines ADD COLUMN content TEXT; 
