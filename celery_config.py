@@ -28,13 +28,13 @@ app.conf.update(
 # Configure periodic tasks
 app.conf.beat_schedule = {
     'collect-dark-pool-trades': {
-        'task': 'tasks.collect_dark_pool_trades',
+        'task': 'collectors.darkpool.darkpool_collector.DarkPoolCollector.collect',
         'schedule': crontab(minute='*/5'),  # Every 5 minutes
-        'options': {'queue': 'dark_pool'}
+        'options': {'queue': 'dark_pool_queue'}
     },
     'collect-news': {
-        'task': 'tasks.collect_news',
+        'task': 'collectors.news.newscollector.NewsCollector.collect',
         'schedule': crontab(minute='*/5'),  # Every 5 minutes
-        'options': {'queue': 'news'}
+        'options': {'queue': 'news_queue'}
     }
 } 
