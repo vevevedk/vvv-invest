@@ -23,8 +23,8 @@ TASK_QUEUES = {
         'exchange': 'news_queue',
         'routing_key': 'news_queue',
     },
-    'darkpool_queue': {
-        'exchange': 'darkpool_queue',
-        'routing_key': 'darkpool_queue',
+    'dark_pool_queue': {
+        'exchange': 'dark_pool_queue',
+        'routing_key': 'dark_pool_queue',
     },
 } 

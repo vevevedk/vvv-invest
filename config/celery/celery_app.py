@@ -36,7 +36,7 @@ app.conf.beat_schedule = {
     'run-darkpool-collector-every-5-mins': {
         'task': 'collectors.darkpool_tasks.run_darkpool_collector',
         'schedule': crontab(minute='*/5'),
-        'options': {'queue': 'darkpool_queue'},
+        'options': {'queue': 'dark_pool_queue'},
         'kwargs': {'hours': 24}  # Collect trades for the last 24 hours
     },
 }

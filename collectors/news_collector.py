@@ -198,13 +198,12 @@ class NewsCollector(BaseCollector):
 
     def _make_request(self, params):
         """Make API request with rate limiting and retry logic."""
-        if not self._check_api_limit():
-            return None
-
+        url = f"{UW_BASE_URL}{NEWS_ENDPOINT}"
+        self.logger.info(f"Making request to {url}")
+        
         try:
-            self.daily_request_count += 1
             response = requests.get(
-                NEWS_ENDPOINT,
+                url,
                 headers=DEFAULT_HEADERS,
                 params=params,
                 timeout=self.request_timeout
