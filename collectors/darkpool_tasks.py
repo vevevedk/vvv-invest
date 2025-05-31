@@ -18,7 +18,7 @@ def run_darkpool_collector(hours: int = 24):
     try:
         logger.info(f"Starting dark pool collector for last {hours} hours...")
         collector = DarkPoolCollector()
-        results = collector.collect_recent_trades(SYMBOLS, hours=hours)
+        results = collector.collect_darkpool_trades(incremental=True)
         logger.info(f"Dark pool collector completed successfully. Results: {results}")
         return results
     except Exception as e:
@@ -82,4 +82,4 @@ def backfill_qqq_trades(start_time: datetime = None, end_time: datetime = None):
         return total_trades
     except Exception as e:
         logger.error(f"Fatal error in backfill task: {str(e)}")
-        raise  # Re-raise to let Celery handle the failure 
+        raise 
