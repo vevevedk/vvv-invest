@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from collectors.schema_validation import NewsSchemaValidator
 from config.db_config import get_db_config
-from config.celery.celery_app import news_app as celery_app
+from config.celery.news_celery_app import app as celery_app
 from config.api_config import UW_BASE_URL, DEFAULT_HEADERS, REQUEST_TIMEOUT
 
 # Configure logging
@@ -148,8 +148,15 @@ class NewsCollector:
                 response.raise_for_status()
                 self.daily_request_count += 1
                 data = response.json()
+                
+                # Add detailed logging
+                logger.info(f"API Response Status: {response.status_code}")
+                logger.info(f"API Response Headers: {dict(response.headers)}")
+                logger.info(f"API Response Data: {data}")
+                
                 return data.get('data', [])
             except requests.exceptions.RequestException as e:
+                logger.error(f"Request failed: {str(e)}")
                 if attempt == self.max_retries - 1:
                     raise
                 time.sleep(self.retry_delay * (2 ** attempt))
