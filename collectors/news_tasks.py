@@ -11,8 +11,8 @@ def run_news_collector():
     """Run the news collector task."""
     try:
         logger.info("Starting news collector...")
-        collector = NewsCollector()
-        collector.run()
+        collector = NewsCollector(is_production=True)
+        collector.collect()
         logger.info("News collector completed successfully")
     except Exception as e:
         logger.error(f"Error in news collector: {str(e)}", exc_info=True)
