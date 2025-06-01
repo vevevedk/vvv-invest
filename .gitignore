@@ -4,7 +4,6 @@ __pycache__/
 *$py.class
 *.so
 .Python
-env/
 build/
 develop-eggs/
 dist/
@@ -21,12 +20,10 @@ wheels/
 .installed.cfg
 *.egg
 
-# Environment variables
-.env
-.env.*
-
-# Data files
-data/
+# Virtual Environment
+venv/
+ENV/
+env/
 
 # IDE
 .idea/
@@ -34,7 +31,23 @@ data/
 *.swp
 *.swo
 
-# OS
+# Logs
+logs/
+*.log
+
+# Data
+exports/
+data/
+*.csv
+*.json
+*.db
+*.sqlite3
+
+# Environment variables
+.env
+.env.*
+
+# System
 .DS_Store
 Thumbs.db
 

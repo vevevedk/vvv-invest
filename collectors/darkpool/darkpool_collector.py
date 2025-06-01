@@ -23,6 +23,7 @@ from config.api_config import (
     UW_BASE_URL, DARKPOOL_TICKER_ENDPOINT, DEFAULT_HEADERS, REQUEST_TIMEOUT
 )
 from flow_analysis.config.watchlist import SYMBOLS
+from collectors.utils.market_utils import is_market_open
 
 # Configure logging
 logging.basicConfig(
@@ -250,6 +251,9 @@ class DarkPoolCollector:
 
     def collect_recent_trades(self, symbols: List[str], hours: int = 24) -> Dict[str, int]:
         """Collect trades for specified symbols for the last N hours."""
+        if not is_market_open():
+            return {symbol: 0 for symbol in symbols}
+            
         end_time = datetime.now(pytz.UTC)
         start_time = end_time - timedelta(hours=hours)
         

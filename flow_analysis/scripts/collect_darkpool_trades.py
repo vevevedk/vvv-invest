@@ -10,6 +10,8 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from flow_analysis.config.watchlist import SYMBOLS
 from flow_analysis.config.db_config import get_db_config
+from config.api_config import UW_API_TOKEN, UW_BASE_URL, DARKPOOL_TICKER_ENDPOINT, DEFAULT_HEADERS
+from collectors.utils.market_utils import is_market_open
 
 # Set ENV_FILE for downstream imports
 os.environ['ENV_FILE'] = os.getenv('ENV_FILE', '.env')
@@ -20,10 +22,9 @@ load_dotenv(env_file, override=True)
 
 # Add parent directory to path to import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config.api_config import UW_API_TOKEN, UW_BASE_URL, DARKPOOL_TICKER_ENDPOINT, DEFAULT_HEADERS
 
 # Database configuration
-DATABASE_URL = f"postgresql://{get_db_config()['user']}:{get_db_config()['password']}@{get_db_config()['host']}:{get_db_config()['port']}/{get_db_config()['database']}?sslmode={get_db_config()['sslmode']}"
+DATABASE_URL = f"postgresql://{get_db_config()['user']}:{get_db_config()['password']}@{get_db_config()['host']}:{get_db_config()['port']}/{get_db_config()['dbname']}?sslmode={get_db_config()['sslmode']}"
 
 # Configure logging
 logging.basicConfig(
@@ -35,31 +36,6 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-
-def is_market_open():
-    """Check if the market is currently open."""
-    eastern = pytz.timezone('US/Eastern')
-    now = datetime.now(eastern)
-    
-    # Market hours (9:30 AM to 4:00 PM ET)
-    market_open = time(9, 30)
-    market_close = time(16, 0)
-    
-    # Check if it's a weekday
-    if now.weekday() >= 5:  # 5 is Saturday, 6 is Sunday
-        logger.info("Market is closed - weekend")
-        return False
-    
-    # Check if it's a holiday (you might want to add a holiday calendar)
-    # For now, we'll just check regular hours
-    
-    current_time = now.time()
-    is_open = market_open <= current_time <= market_close
-    
-    if not is_open:
-        logger.info(f"Market is closed - current ET time: {now.strftime('%H:%M:%S')}")
-    
-    return is_open
 
 def fetch_trades(symbol, date_str, limit=500):
     """Fetch dark pool trades from the API."""

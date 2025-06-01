@@ -108,12 +108,17 @@ class NewsSchemaValidator(SchemaValidator):
         'id': 'INTEGER',
         'headline': 'TEXT',
         'source': 'VARCHAR',
-        'published_at': 'TIMESTAMP',
-        'symbols': 'ARRAY',
+        'created_at': 'TIMESTAMP',
+        'tags': 'ARRAY',
+        'tickers': 'ARRAY',
+        'is_major': 'BOOLEAN',
         'sentiment': 'DECIMAL',
-        'impact_score': 'INTEGER',
-        'collected_at': 'TIMESTAMP'
+        'meta': 'JSONB',
+        'collection_time': 'TIMESTAMP'
     }
+    
+    def __init__(self, engine: Engine):
+        super().__init__(engine)
     
     def validate_news_schema(self) -> bool:
         """Validate the news headlines schema."""

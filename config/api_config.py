@@ -5,7 +5,8 @@ API configuration settings
 import os
 from dotenv import load_dotenv
 
-env_file = os.getenv("ENV_FILE", ".env")
+# Load production environment file by default
+env_file = os.getenv("ENV_FILE", ".env.prod")
 load_dotenv(env_file, override=True)
 
 # Unusual Whales API configuration

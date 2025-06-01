@@ -1,152 +1,78 @@
-# vvv-invest
+# VVV Invest Data Collection System
 
-A comprehensive market data collection and analysis system for investment research.
-
-## Project Structure
-
-```
-vvv-invest/
-├── collectors/              # Data collection modules
-│   ├── darkpool/           # Dark pool trade collection
-│   ├── news/              # News headline collection
-│   ├── options/           # Options flow collection
-│   └── schema_validation/ # Schema validation utilities
-├── config/                # Configuration files
-│   ├── celery/           # Celery task configuration
-│   ├── logrotate/        # Log rotation configuration
-│   └── systemd/          # Systemd service files
-├── data/                 # Data storage
-│   ├── cache/           # Cached data files
-│   ├── processed/       # Processed data files
-│   └── raw/            # Raw data files
-├── docs/                # Documentation
-│   ├── api/            # API documentation
-│   ├── deployment/     # Deployment guides
-│   ├── development/    # Development guides
-│   ├── planning/       # Project planning docs
-│   └── work_notes/     # Development work notes
-├── flow_analysis/      # Data analysis tools
-│   ├── dashboard/      # Web dashboard
-│   ├── monitoring/     # System monitoring
-│   └── notebooks/      # Jupyter notebooks
-├── logs/              # Log files
-│   ├── backfill/      # Backfill operation logs
-│   └── collector/     # Collector operation logs
-├── migrations/        # Database migrations
-│   ├── darkpool/     # Dark pool migrations
-│   └── news/         # News migrations
-├── scripts/          # Utility scripts
-│   ├── db/          # Database utilities
-│   ├── deployment/  # Deployment scripts
-│   ├── maintenance/ # Maintenance scripts
-│   ├── monitoring/  # Monitoring scripts
-│   ├── utils/       # Utility functions
-│   └── verification/# Data verification scripts
-└── tests/           # Test files
-```
+A system for collecting and analyzing dark pool trades and news headlines for financial market analysis.
 
 ## Features
 
 - Dark pool trade collection and analysis
 - News headline collection and sentiment analysis
-- Options flow data collection and analysis
-- Real-time data processing and monitoring
-- Automated data validation and verification
-- Web dashboard for data visualization
-- Systemd service integration for production deployment
+- Data export to CSV for further analysis
+- Support for both real-time collection and historical backfill
 
-## Requirements
+## Setup
 
-- Python 3.8+
-- PostgreSQL 12+
-- Redis (for Celery)
-- Required Python packages (see requirements.txt)
-
-## Installation
-
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/vvv-invest.git
-cd vvv-invest
-```
-
-2. Create and activate a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. Install dependencies:
+1. Install dependencies:
 ```bash
 pip install -r requirements.txt
-pip install -r requirements-test.txt  # For development
 ```
 
-4. Set up environment variables:
-```bash
-cp .env.example .env
-# Edit .env with your configuration
-```
+2. Configure database settings in `config/db_config.py`
+
+3. Configure API settings in `config/api_config.py`
 
 ## Usage
 
-### Running Collectors
+### Real-time Collection
 
-1. Dark Pool Collector:
+Run the collectors to gather the latest data:
 ```bash
-python -m collectors.darkpool.dark_pool_trades
+python3 scripts/run_collectors.py
 ```
 
-2. News Collector:
+This will:
+- Collect recent dark pool trades
+- Collect latest news headlines
+- Export data to CSV files in the `exports` directory
+
+### Historical Backfill
+
+To backfill historical data:
 ```bash
-python -m collectors.news.newscollector
+# Default 7-day backfill
+python3 scripts/run_backfill.py
+
+# Custom number of days
+python3 scripts/run_backfill.py --days 14
+
+# Specific symbols
+python3 scripts/run_backfill.py --symbols AAPL MSFT GOOGL
 ```
 
-3. Options Flow Collector:
-```bash
-python -m collectors.options.options_flow_collector
-```
+## Project Structure
 
-### Running with Celery
+- `collectors/` - Data collection modules
+  - `darkpool/` - Dark pool trade collection
+  - `news/` - News headline collection
+  - `utils/` - Shared utilities
+- `config/` - Configuration files
+- `scripts/` - Command-line scripts
+- `exports/` - Exported data files
+- `logs/` - Log files
 
-1. Start Redis server
-2. Start Celery worker:
-```bash
-celery -A config.celery.celery_app worker --loglevel=info
-```
+## Logging
 
-3. Start Celery beat (for scheduled tasks):
-```bash
-celery -A config.celery.celery_app beat --loglevel=info
-```
+Logs are stored in the `logs/` directory:
+- `collector/darkpool_collector.log`
+- `collector/news_collector.log`
 
-### Running the Dashboard
+## Contributing
 
-```bash
-python -m flow_analysis.dashboard.app
-```
-
-## Development
-
-- Follow PEP 8 style guide
-- Write tests for new features
-- Update documentation as needed
-- Use pre-commit hooks for code quality
-
-## Deployment
-
-See `docs/deployment/DEPLOYMENT.md` for detailed deployment instructions.
-
-## Environment Variables
-
-Required environment variables:
-- `UW_API_TOKEN`: API token for data collection
-- `DB_HOST`: Database host
-- `DB_PORT`: Database port
-- `DB_NAME`: Database name
-- `DB_USER`: Database user
-- `DB_PASSWORD`: Database password
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
 ## License
 
-MIT License - see LICENSE file for details
+This project is licensed under the MIT License - see the LICENSE file for details.

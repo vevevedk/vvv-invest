@@ -12,7 +12,9 @@ from sqlalchemy import create_engine, text
 from celery import Celery
 import time
 import random
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import pytz
 
 from collectors.schema_validation import NewsSchemaValidator
 from config.db_config import get_db_config
@@ -101,7 +103,7 @@ def main():
     args = parser.parse_args()
     
     try:
-        collector = NewsCollector(is_production=(args.mode == 'production'))
+        collector = NewsCollector()  # Remove is_production parameter
         collector.collect(start_date=args.start_date, end_date=args.end_date)
     except Exception as e:
         logger.error(f"Error in main: {str(e)}")
@@ -123,7 +125,33 @@ class NewsCollector:
         self.daily_request_count = 0
         self.daily_limit = 15000
         self.rate_limit_delay = 1.0
-        self.validator = NewsSchemaValidator()  # Initialize the validator
+        self.validator = NewsSchemaValidator  # Use the class directly
+        self._create_schema_if_not_exists()
+
+    def _create_schema_if_not_exists(self):
+        """Create the news headlines schema and table if they don't exist."""
+        engine = get_db_connection()
+        with engine.connect() as conn:
+            # Create schema if it doesn't exist
+            conn.execute(text("CREATE SCHEMA IF NOT EXISTS trading;"))
+            
+            # Create table if it doesn't exist
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS trading.news_headlines (
+                    id SERIAL PRIMARY KEY,
+                    headline TEXT NOT NULL,
+                    source VARCHAR(255),
+                    published_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    tags TEXT[],
+                    tickers TEXT[],
+                    is_major BOOLEAN,
+                    sentiment TEXT,
+                    meta JSONB,
+                    collection_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """))
+            conn.commit()
+            logger.info("News headlines schema and table created/verified")
 
     def _check_api_limit(self) -> bool:
         """Check if we're approaching the API limit."""
@@ -139,22 +167,28 @@ class NewsCollector:
                 if not self._check_api_limit():
                     return []
                     
+                # Log request details
+                logger.info(f"Making API request with params: {params}")
+                
                 response = requests.get(
                     NEWS_API_ENDPOINT,
                     headers=DEFAULT_HEADERS,
                     params=params,
                     timeout=self.request_timeout
                 )
+                
+                # Log response status only
+                logger.info(f"API Response Status: {response.status_code}")
+                
                 response.raise_for_status()
                 self.daily_request_count += 1
                 data = response.json()
                 
-                # Add detailed logging
-                logger.info(f"API Response Status: {response.status_code}")
-                logger.info(f"API Response Headers: {dict(response.headers)}")
-                logger.info(f"API Response Data: {data}")
+                # Log number of articles received instead of full data
+                articles = data.get('data', [])
+                logger.info(f"Received {len(articles)} articles from API")
                 
-                return data.get('data', [])
+                return articles
             except requests.exceptions.RequestException as e:
                 logger.error(f"Request failed: {str(e)}")
                 if attempt == self.max_retries - 1:
@@ -171,13 +205,25 @@ class NewsCollector:
         self.last_progress_update = time.time()
         self.last_logged_page = -1
         
-        start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00')) if start_date else None
-        end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00')) if end_date else None
+        # Convert dates to timezone-aware datetime objects
+        if start_date:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            start_dt = start_dt.replace(tzinfo=pytz.UTC)
+        else:
+            start_dt = None
         
-        latest_article_date = self._get_latest_article_date()
-        if latest_article_date:
-            if not start_date or datetime.fromisoformat(start_date.replace('Z', '+00:00')) < latest_article_date:
+        if end_date:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            end_dt = end_dt.replace(tzinfo=pytz.UTC)
+        else:
+            end_dt = None
+        
+        # Only use latest article date if we're not in backfill mode
+        if not start_date:
+            latest_article_date = self._get_latest_article_date()
+            if latest_article_date:
                 start_date = latest_article_date.isoformat()
+                start_dt = latest_article_date
         
         while page < self.max_pages:
             if not self._check_api_limit():
@@ -192,9 +238,14 @@ class NewsCollector:
                         'limit': self.batch_size,
                         'page': current_page
                     }
-                    if start_date:
+                    
+                    # For backfill mode, use older_than to get historical data
+                    if start_date and end_date:
+                        params['older_than'] = end_date
                         params['newer_than'] = start_date
-                    if end_date:
+                    elif start_date:
+                        params['newer_than'] = start_date
+                    elif end_date:
                         params['older_than'] = end_date
                     
                     futures.append(executor.submit(self._make_request, params))
@@ -245,7 +296,9 @@ class NewsCollector:
         """Filter articles based on date range."""
         filtered = []
         for article in data:
+            # Use created_at from API response but store it as published_at
             article_date = datetime.fromisoformat(article['created_at'].replace('Z', '+00:00'))
+            article_date = article_date.replace(tzinfo=pytz.UTC)
             if (start_dt is None or article_date >= start_dt) and (end_dt is None or article_date <= end_dt):
                 filtered.append(article)
         return filtered
@@ -292,13 +345,17 @@ class NewsCollector:
             
         with get_db_connection().connect() as conn:
             for headline in headlines:
+                # Add collection time
+                headline_data = headline.copy()
+                headline_data['collected_at'] = datetime.now(pytz.UTC)
+                
                 conn.execute(
                     text("""
                     INSERT INTO trading.news_headlines 
-                    (meta, source, created_at, tags, headline, tickers, is_major, sentiment)
-                    VALUES (:meta, :source, :created_at, :tags, :headline, :tickers, :is_major, :sentiment)
+                    (headline, source, created_at, tags, tickers, is_major, sentiment, meta, collected_at)
+                    VALUES (:headline, :source, :created_at, :tags, :tickers, :is_major, :sentiment, :meta, :collected_at)
                     """),
-                    headline
+                    headline_data
                 )
             conn.commit()
 
