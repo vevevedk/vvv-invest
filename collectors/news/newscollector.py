@@ -141,13 +141,13 @@ class NewsCollector:
                     id SERIAL PRIMARY KEY,
                     headline TEXT NOT NULL,
                     source VARCHAR(255),
-                    published_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     tags TEXT[],
                     tickers TEXT[],
                     is_major BOOLEAN,
                     sentiment TEXT,
                     meta JSONB,
-                    collection_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    collected_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                 );
             """))
             conn.commit()
@@ -348,7 +348,9 @@ class NewsCollector:
                 # Add collection time
                 headline_data = headline.copy()
                 headline_data['collected_at'] = datetime.now(pytz.UTC)
-                
+                # Ensure created_at is present for DB insert
+                if 'created_at' not in headline_data:
+                    continue
                 conn.execute(
                     text("""
                     INSERT INTO trading.news_headlines 

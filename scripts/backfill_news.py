@@ -44,7 +44,7 @@ def backfill_news(start_date: str = None, end_date: str = None, days: int = None
             datetime.strptime(end_date, '%Y-%m-%d')
         
         # Create collector and run backfill
-        collector = NewsCollector(is_production=False)
+        collector = NewsCollector()
         collector.collect(start_date=start_date, end_date=end_date)
         
     except ValueError as e:
