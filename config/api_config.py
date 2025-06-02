@@ -3,14 +3,25 @@ API configuration settings
 """
 
 import os
+import logging
 from dotenv import load_dotenv
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load production environment file by default
 env_file = os.getenv("ENV_FILE", ".env.prod")
+logger.info(f"Loading environment from: {env_file}")
 load_dotenv(env_file, override=True)
 
 # Unusual Whales API configuration
 UW_API_TOKEN = os.getenv('UW_API_TOKEN')
+if not UW_API_TOKEN:
+    logger.error("UW_API_TOKEN not found in environment variables!")
+else:
+    logger.info("UW_API_TOKEN loaded successfully")
+
 UW_BASE_URL = "https://api.unusualwhales.com/api"  # Do NOT include /v1 for news endpoints
 
 # Dark Pool endpoints
