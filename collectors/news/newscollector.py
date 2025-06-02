@@ -31,7 +31,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Constants
-NEWS_API_ENDPOINT = f"{UW_BASE_URL}/api/news/headlines"
+NEWS_API_ENDPOINT = f"{UW_BASE_URL}/news/headlines"
 BATCH_SIZE = 100
 MAX_RETRIES = 3
 MAX_DAYS_BACKFILL = 7
