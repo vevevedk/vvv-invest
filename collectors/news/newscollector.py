@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from sqlalchemy import create_engine, text
-from celery import Celery
 import time
 import random
 import sys
@@ -18,7 +17,6 @@ import pytz
 
 from collectors.schema_validation import NewsSchemaValidator
 from config.db_config import get_db_config
-from config.celery.news_celery_app import app as celery_app
 from config.api_config import UW_BASE_URL, DEFAULT_HEADERS, REQUEST_TIMEOUT
 
 # Configure logging
@@ -33,7 +31,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Constants
-NEWS_API_ENDPOINT = f"{UW_BASE_URL}/news/headlines"
+NEWS_API_ENDPOINT = f"{UW_BASE_URL}/api/news/headlines"
 BATCH_SIZE = 100
 MAX_RETRIES = 3
 MAX_DAYS_BACKFILL = 7
@@ -49,17 +47,6 @@ def validate_schema():
     """Validate the news headlines schema."""
     engine = get_db_connection()
     return NewsSchemaValidator.validate_news_schema(engine)
-
-@celery_app.task
-def collect_news_headlines():
-    """Celery task to collect news headlines in production mode."""
-    try:
-        collector = NewsCollector(is_production=True)
-        collector.collect()
-        return True
-    except Exception as e:
-        logger.error(f"Error in Celery task: {str(e)}")
-        return False
 
 def fetch_headlines(symbols: List[str], start_date: str, end_date: str) -> List[Dict]:
     """Fetch headlines from the API."""
@@ -103,7 +90,7 @@ def main():
     args = parser.parse_args()
     
     try:
-        collector = NewsCollector()  # Remove is_production parameter
+        collector = NewsCollector()
         collector.collect(start_date=args.start_date, end_date=args.end_date)
     except Exception as e:
         logger.error(f"Error in main: {str(e)}")
