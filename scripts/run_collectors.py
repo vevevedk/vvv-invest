@@ -4,12 +4,16 @@ import os
 import sys
 import logging
 import time
+import argparse
 from datetime import datetime, timedelta, timezone
 import pandas as pd
 from sqlalchemy import create_engine, text
 
 # Add project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Set environment file to local
+os.environ['ENV_FILE'] = '.env.local'
 
 from collectors.darkpool.darkpool_collector import DarkPoolCollector
 from collectors.news.newscollector import NewsCollector
@@ -26,6 +30,13 @@ logging.getLogger('urllib3').setLevel(logging.WARNING)
 logging.getLogger('requests').setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
+
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description='Run data collectors')
+    parser.add_argument('--env', choices=['local', 'prod'], default='local',
+                      help='Environment to run against (local or prod)')
+    return parser.parse_args()
 
 def export_darkpool_trades(db_config, hours=24):
     """Export dark pool trades from the last N hours to CSV."""
@@ -123,6 +134,13 @@ def export_news_headlines(db_config, hours=24):
 
 def main():
     """Run collectors in sequence and export data."""
+    args = parse_args()
+    
+    # Set environment file based on argument
+    env_file = '.env.local' if args.env == 'local' else '.env.prod'
+    os.environ['ENV_FILE'] = env_file
+    logger.info(f"Using environment file: {env_file}")
+    
     start_time = time.time()
     logger.info("Starting collector run sequence")
     
