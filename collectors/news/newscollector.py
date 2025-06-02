@@ -14,6 +14,7 @@ import random
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import pytz
+from datetime import timezone
 
 from collectors.schema_validation import NewsSchemaValidator
 from config.db_config import get_db_config
@@ -40,13 +41,20 @@ def get_db_connection():
     """Get database connection using configuration."""
     db_config = get_db_config()
     return create_engine(
-        f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['dbname']}?sslmode={db_config['sslmode']}"
+        f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['dbname']}?sslmode={db_config['sslmode']}",
+        pool_size=5,  # Limit pool size
+        max_overflow=10,  # Allow some overflow connections
+        pool_timeout=30,  # Timeout for getting a connection from pool
+        pool_recycle=1800,  # Recycle connections after 30 minutes
     )
 
 def validate_schema():
     """Validate the news headlines schema."""
     engine = get_db_connection()
-    return NewsSchemaValidator.validate_news_schema(engine)
+    try:
+        return NewsSchemaValidator.validate_news_schema(engine)
+    finally:
+        engine.dispose()
 
 def fetch_headlines(symbols: List[str], start_date: str, end_date: str) -> List[Dict]:
     """Fetch headlines from the API."""
@@ -113,37 +121,44 @@ class NewsCollector:
         self.daily_limit = 15000
         self.rate_limit_delay = 1.0
         self.validator = NewsSchemaValidator  # Use the class directly
+        self.logger = logging.getLogger(__name__)
+        self.api_endpoint = NEWS_API_ENDPOINT
+        self.headers = DEFAULT_HEADERS
+        self.engine = get_db_connection()
         self._create_schema_if_not_exists()
 
     def _create_schema_if_not_exists(self):
         """Create the news headlines schema and table if they don't exist."""
-        engine = get_db_connection()
-        with engine.connect() as conn:
-            # Create schema if it doesn't exist
-            conn.execute(text("CREATE SCHEMA IF NOT EXISTS trading;"))
-            
-            # Create table if it doesn't exist
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS trading.news_headlines (
-                    id SERIAL PRIMARY KEY,
-                    headline TEXT NOT NULL,
-                    source VARCHAR(255),
-                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                    tags TEXT[],
-                    tickers TEXT[],
-                    is_major BOOLEAN,
-                    sentiment TEXT,
-                    meta JSONB,
-                    collected_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                );
-            """))
-            conn.commit()
-            logger.info("News headlines schema and table created/verified")
+        try:
+            with self.engine.connect() as conn:
+                # Create schema if it doesn't exist
+                conn.execute(text("CREATE SCHEMA IF NOT EXISTS trading;"))
+                
+                # Create table if it doesn't exist
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS trading.news_headlines (
+                        id SERIAL PRIMARY KEY,
+                        headline TEXT NOT NULL,
+                        source VARCHAR(255),
+                        created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                        tags TEXT[],
+                        tickers TEXT[],
+                        is_major BOOLEAN,
+                        sentiment TEXT,
+                        meta JSONB,
+                        collected_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+                """))
+                conn.commit()
+                self.logger.info("News headlines schema and table created/verified")
+        except Exception as e:
+            self.logger.error(f"Error creating schema: {str(e)}")
+            raise
 
     def _check_api_limit(self) -> bool:
         """Check if we're approaching the API limit."""
         if self.daily_request_count >= (self.daily_limit * 0.9):
-            logger.warning(f"Approaching API limit: {self.daily_request_count}/{self.daily_limit} requests used")
+            self.logger.warning(f"Approaching API limit: {self.daily_request_count}/{self.daily_limit} requests used")
             return False
         return True
 
@@ -155,140 +170,108 @@ class NewsCollector:
                     return []
                     
                 # Log request details
-                logger.info(f"Making API request with params: {params}")
+                self.logger.info(f"Making request to {self.api_endpoint}")
+                self.logger.info(f"Request params: {params}")
                 
                 response = requests.get(
-                    NEWS_API_ENDPOINT,
-                    headers=DEFAULT_HEADERS,
+                    self.api_endpoint,
+                    headers=self.headers,
                     params=params,
                     timeout=self.request_timeout
                 )
                 
-                # Log response status only
-                logger.info(f"API Response Status: {response.status_code}")
+                # Log response details
+                self.logger.info(f"API Response Status: {response.status_code}")
                 
-                response.raise_for_status()
+                if response.status_code != 200:
+                    self.logger.error(f"API Error Response: {response.text}")
+                    response.raise_for_status()
+                
                 self.daily_request_count += 1
                 data = response.json()
                 
-                # Log number of articles received instead of full data
+                # Log response data
                 articles = data.get('data', [])
-                logger.info(f"Received {len(articles)} articles from API")
+                self.logger.info(f"Received {len(articles)} articles from API")
                 
                 return articles
             except requests.exceptions.RequestException as e:
-                logger.error(f"Request failed: {str(e)}")
+                self.logger.error(f"Request failed: {str(e)}")
                 if attempt == self.max_retries - 1:
                     raise
                 time.sleep(self.retry_delay * (2 ** attempt))
         return []
 
-    def fetch_data(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Fetch news data with parallel requests and optimized pagination."""
+    def fetch_data(self, start_date=None, end_date=None):
+        """Fetch news headlines from the API"""
+        if not start_date:
+            start_date = datetime.now()
+        if not end_date:
+            end_date = datetime.now()
+
+        # Convert to UTC for API
+        start_date = start_date.astimezone(timezone.utc)
+        end_date = end_date.astimezone(timezone.utc)
+
+        # Format dates for API
+        start_str = start_date.strftime('%Y-%m-%dT%H:%M:%S%z')
+        end_str = end_date.strftime('%Y-%m-%dT%H:%M:%S%z')
+
+        # Check cache first
+        cached_articles = self._get_cached_articles(start_date, end_date)
+        if cached_articles:
+            self.logger.info(f"Using {len(cached_articles)} cached articles")
+            return cached_articles
+
         all_articles = []
         page = 0
-        retry_count = 0
-        self.total_articles = 0
-        self.last_progress_update = time.time()
-        self.last_logged_page = -1
-        
-        # Convert dates to timezone-aware datetime objects
-        if start_date:
-            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-            start_dt = start_dt.replace(tzinfo=pytz.UTC)
-        else:
-            start_dt = None
-        
-        if end_date:
-            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-            end_dt = end_dt.replace(tzinfo=pytz.UTC)
-        else:
-            end_dt = None
-        
-        # Only use latest article date if we're not in backfill mode
-        if not start_date:
-            latest_article_date = self._get_latest_article_date()
-            if latest_article_date:
-                start_date = latest_article_date.isoformat()
-                start_dt = latest_article_date
-        
-        while page < self.max_pages:
-            if not self._check_api_limit():
-                logger.warning("Stopping collection due to API limit")
-                return all_articles
+        total_articles = 0
 
-            futures = []
-            with ThreadPoolExecutor(max_workers=self.max_parallel_requests) as executor:
-                for i in range(self.max_parallel_requests):
-                    current_page = page + i
-                    params = {
-                        'limit': self.batch_size,
-                        'page': current_page
-                    }
-                    
-                    # For backfill mode, use older_than to get historical data
-                    if start_date and end_date:
-                        params['older_than'] = end_date
-                        params['newer_than'] = start_date
-                    elif start_date:
-                        params['newer_than'] = start_date
-                    elif end_date:
-                        params['older_than'] = end_date
-                    
-                    futures.append(executor.submit(self._make_request, params))
-                
-                for future in as_completed(futures):
-                    try:
-                        data = future.result()
-                        if not data:
-                            continue
-                            
-                        filtered = self._filter_by_date(data, start_dt, end_dt)
-                        all_articles.extend(filtered)
-                        self.total_articles += len(filtered)
-                        
-                        current_time = time.time()
-                        if current_time - self.last_progress_update >= 2 and page > self.last_logged_page:
-                            logger.info(f"Progress: {self.total_articles} articles (page {page}/{self.max_pages})")
-                            self.last_progress_update = current_time
-                            self.last_logged_page = page
-                        
-                        if len(data) < self.batch_size:
-                            return all_articles
-                            
-                    except Exception as e:
-                        if retry_count < self.max_retries:
-                            retry_count += 1
-                            time.sleep(self.retry_delay * (2 ** retry_count))
-                            continue
-                        else:
-                            return all_articles
-            
-            page += self.max_parallel_requests
-            time.sleep(self.rate_limit_delay)
-            
+        while True:
+            params = {
+                'limit': 100,
+                'page': page,
+                'newer_than': start_str
+            }
+
+            try:
+                response = requests.get(
+                    self.api_endpoint,
+                    params=params,
+                    headers=self.headers
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                if not data.get('data'):
+                    break
+
+                articles = data['data']
+                if not articles:
+                    break
+
+                all_articles.extend(articles)
+                total_articles += len(articles)
+                self.logger.info(f"Progress: {total_articles} articles (page {page + 1}/10)")
+
+                if len(articles) < 100:
+                    break
+
+                page += 1
+                if page >= 10:  # Limit to 1000 articles
+                    break
+
+            except requests.exceptions.RequestException as e:
+                self.logger.error(f"Error fetching data: {str(e)}")
+                break
+
+        self.logger.info(f"Successfully collected {total_articles} headlines")
         return all_articles
 
-    def _get_latest_article_date(self):
-        """Get the latest article date from the database."""
-        engine = get_db_connection()
-        with engine.connect() as conn:
-            result = conn.execute(text("""
-                SELECT MAX(created_at) 
-                FROM trading.news_headlines
-            """))
-            return result.scalar()
-
-    def _filter_by_date(self, data: List[Dict[str, Any]], start_dt: Optional[datetime], end_dt: Optional[datetime]) -> List[Dict[str, Any]]:
-        """Filter articles based on date range."""
-        filtered = []
-        for article in data:
-            # Use created_at from API response but store it as published_at
-            article_date = datetime.fromisoformat(article['created_at'].replace('Z', '+00:00'))
-            article_date = article_date.replace(tzinfo=pytz.UTC)
-            if (start_dt is None or article_date >= start_dt) and (end_dt is None or article_date <= end_dt):
-                filtered.append(article)
-        return filtered
+    def _get_cached_articles(self, start_date, end_date):
+        # Implementation of _get_cached_articles method
+        # This method should return cached articles based on the start_date and end_date
+        return []
 
     def collect(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> None:
         """Collect news headlines.
@@ -325,28 +308,38 @@ class NewsCollector:
             logger.error(f"Error collecting news headlines: {str(e)}")
             raise
     
-    def save_headlines(self, headlines: List[Dict[str, Any]]) -> None:
-        """Save headlines to the database."""
+    def save_headlines(self, headlines):
+        """Save headlines to the database"""
         if not headlines:
+            self.logger.info("No headlines to save")
             return
-            
-        with get_db_connection().connect() as conn:
-            for headline in headlines:
-                # Add collection time
-                headline_data = headline.copy()
-                headline_data['collected_at'] = datetime.now(pytz.UTC)
-                # Ensure created_at is present for DB insert
-                if 'created_at' not in headline_data:
-                    continue
-                conn.execute(
-                    text("""
-                    INSERT INTO trading.news_headlines 
-                    (headline, source, created_at, tags, tickers, is_major, sentiment, meta, collected_at)
-                    VALUES (:headline, :source, :created_at, :tags, :tickers, :is_major, :sentiment, :meta, :collected_at)
-                    """),
-                    headline_data
-                )
-            conn.commit()
+
+        try:
+            with self.engine.connect() as conn:
+                # Convert headlines to DataFrame
+                df = pd.DataFrame(headlines)
+                
+                # Ensure all required columns exist
+                required_columns = ['headline', 'source', 'created_at', 'is_major', 'sentiment', 'tickers', 'tags', 'meta']
+                for col in required_columns:
+                    if col not in df.columns:
+                        df[col] = None
+
+                # Convert lists to JSON strings
+                df['tickers'] = df['tickers'].apply(lambda x: json.dumps(x) if isinstance(x, list) else '[]')
+                df['tags'] = df['tags'].apply(lambda x: json.dumps(x) if isinstance(x, list) else '[]')
+                df['meta'] = df['meta'].apply(lambda x: json.dumps(x) if isinstance(x, dict) else '{}')
+
+                # Convert created_at to datetime
+                df['created_at'] = pd.to_datetime(df['created_at'])
+
+                # Save to database
+                df.to_sql('news_headlines', conn, if_exists='append', index=False)
+                self.logger.info(f"Saved {len(headlines)} headlines to database")
+
+        except Exception as e:
+            self.logger.error(f"Error saving headlines: {str(e)}")
+            raise
 
 if __name__ == "__main__":
     main() 
