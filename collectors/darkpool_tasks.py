@@ -8,6 +8,7 @@ from flow_analysis.config.api_config import (
     DEFAULT_HEADERS, REQUEST_TIMEOUT, REQUEST_RATE_LIMIT
 )
 from flow_analysis.config.watchlist import SYMBOLS
+from collectors.utils.market_utils import is_market_open, get_next_market_open
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -17,13 +18,20 @@ def run_darkpool_collector(hours: int = 24):
     """Run the dark pool collector to fetch and process dark pool trades for the last N hours."""
     try:
         logger.info(f"Starting dark pool collector for last {hours} hours...")
+        
+        # Check if market is open
+        if not is_market_open():
+            next_open = get_next_market_open()
+            logger.info(f"Market is closed. Next market open: {next_open}")
+            return {"status": "market_closed", "next_open": next_open.isoformat()}
+        
         collector = DarkPoolCollector()
         results = collector.collect_darkpool_trades(incremental=True)
         logger.info(f"Dark pool collector completed successfully. Results: {results}")
-        return results
+        return {"status": "success", "results": results}
     except Exception as e:
         logger.error(f"Error in dark pool collector: {str(e)}", exc_info=True)
-        raise
+        return {"status": "error", "error": str(e)}
 
 def backfill_qqq_trades(start_time: datetime = None, end_time: datetime = None):
     """Backfill QQQ trades for a specific time period."""

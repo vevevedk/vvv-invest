@@ -49,9 +49,9 @@ from collectors.darkpool_tasks import run_darkpool_collector
 def run_darkpool_collector_task(hours: int = 24):
     logger.info(f"Starting darkpool collector task for last {hours} hours")
     try:
-        result = run_darkpool_collector()
-        logger.info("Darkpool collector task completed successfully")
+        result = run_darkpool_collector(hours=hours)
+        logger.info(f"Darkpool collector task completed with status: {result['status']}")
         return result
     except Exception as e:
         logger.error(f"Error in darkpool collector task: {str(e)}", exc_info=True)
-        raise
+        return {"status": "error", "error": str(e)}
