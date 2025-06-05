@@ -8,9 +8,10 @@ User=avxz
 Group=avxz
 WorkingDirectory=/opt/darkpool_collector
 Environment="PATH=/opt/darkpool_collector/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PYTHONPATH=/opt/darkpool_collector"
 Environment="ENV_FILE=/opt/darkpool_collector/.env.prod"
 EnvironmentFile=/opt/darkpool_collector/.env.prod
-ExecStart=/opt/darkpool_collector/venv/bin/celery -A config.celery.celery_app beat --loglevel=info --schedule=/var/lib/celery/beat/darkpool-beat-schedule.db --broker-connection-retry-on-startup=true
+ExecStart=/opt/darkpool_collector/venv/bin/celery -A config.celery.celery_app beat --loglevel=info --schedule=/opt/darkpool_collector/celerybeat-darkpool-schedule.db
 Restart=always
 RestartSec=10
 

@@ -8,6 +8,7 @@ User=avxz
 Group=avxz
 WorkingDirectory=/opt/darkpool_collector
 Environment="PATH=/opt/darkpool_collector/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PYTHONPATH=/opt/darkpool_collector"
 Environment="ENV_FILE=/opt/darkpool_collector/.env.prod"
 EnvironmentFile=/opt/darkpool_collector/.env.prod
 ExecStart=/opt/darkpool_collector/venv/bin/celery -A config.celery.celery_app worker --loglevel=info -Q dark_pool_queue -n dark_pool_worker@%h
