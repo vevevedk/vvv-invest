@@ -5,7 +5,7 @@ import json
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 from sqlalchemy import create_engine, text
 import time
@@ -15,11 +15,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pytz
 from datetime import timezone
 from celery import shared_task
+import hashlib
+import pickle
 
 from collectors.schema_validation import NewsSchemaValidator
 from config.db_config import get_db_config
 from config.api_config import UW_BASE_URL, DEFAULT_HEADERS, REQUEST_TIMEOUT
 from collectors.utils.logging_config import setup_logging, log_collector_summary
+from collectors.utils.market_utils import is_market_open
 
 # Set up logging
 logger = setup_logging('news_collector', 'news_collector.log')
@@ -29,6 +32,11 @@ NEWS_API_ENDPOINT = f"{UW_BASE_URL}/news/headlines"
 BATCH_SIZE = 100
 MAX_RETRIES = 3
 MAX_DAYS_BACKFILL = 7
+CACHE_DIR = Path('cache/news')
+CACHE_EXPIRY_DAYS = 7
+CREDITS_PER_REQUEST = 1  # Each API request costs 1 credit
+MARKET_OPEN_COLLECTION_INTERVAL = 5  # minutes
+MARKET_CLOSED_COLLECTION_INTERVAL = 15  # minutes
 
 def get_db_connection():
     """Get database connection using configuration."""
@@ -62,6 +70,84 @@ class NewsCollector:
         self.headers = DEFAULT_HEADERS
         self.engine = get_db_connection()
         self._create_schema_if_not_exists()
+        self._setup_cache()
+        
+        # API credit tracking
+        self.total_credits_used = 0
+        self.cached_requests = 0
+        self.failed_requests = 0
+        self.start_time = None
+
+    def _log_credit_usage(self, request_type: str, credits: int = CREDITS_PER_REQUEST):
+        """Log API credit usage."""
+        self.total_credits_used += credits
+        logger.info(f"API Credit Usage - {request_type}: {credits} credits (Total: {self.total_credits_used})")
+
+    def _print_credit_summary(self):
+        """Print summary of API credit usage."""
+        if not self.start_time:
+            return
+            
+        duration = datetime.now() - self.start_time
+        logger.info("\nAPI Credit Usage Summary:")
+        logger.info("=" * 50)
+        logger.info(f"Total Credits Used: {self.total_credits_used}")
+        logger.info(f"Cached Requests: {self.cached_requests}")
+        logger.info(f"Failed Requests: {self.failed_requests}")
+        logger.info(f"Duration: {duration}")
+        logger.info(f"Credits per minute: {self.total_credits_used / (duration.total_seconds() / 60):.2f}")
+        logger.info("=" * 50)
+
+    def _setup_cache(self):
+        """Set up cache directory and clean old cache files."""
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        self._clean_old_cache()
+
+    def _clean_old_cache(self):
+        """Remove cache files older than CACHE_EXPIRY_DAYS."""
+        expiry_date = datetime.now() - timedelta(days=CACHE_EXPIRY_DAYS)
+        for cache_file in CACHE_DIR.glob('*.pkl'):
+            if cache_file.stat().st_mtime < expiry_date.timestamp():
+                cache_file.unlink()
+
+    def _get_cache_key(self, params: Dict[str, Any]) -> str:
+        """Generate a cache key from request parameters."""
+        param_str = json.dumps(params, sort_keys=True)
+        return hashlib.md5(param_str.encode()).hexdigest()
+
+    def _get_cached_data(self, cache_key: str) -> Optional[List[Dict[str, Any]]]:
+        """Retrieve data from cache if available."""
+        cache_file = CACHE_DIR / f"{cache_key}.pkl"
+        if cache_file.exists():
+            try:
+                with open(cache_file, 'rb') as f:
+                    self.cached_requests += 1
+                    self._log_credit_usage("Cached Request", 0)  # No credits used for cached requests
+                    return pickle.load(f)
+            except Exception as e:
+                logger.warning(f"Cache read error: {str(e)}")
+        return None
+
+    def _save_to_cache(self, cache_key: str, data: List[Dict[str, Any]]):
+        """Save data to cache."""
+        cache_file = CACHE_DIR / f"{cache_key}.pkl"
+        try:
+            with open(cache_file, 'wb') as f:
+                pickle.dump(data, f)
+        except Exception as e:
+            logger.warning(f"Cache write error: {str(e)}")
+
+    def _split_date_range(self, start_date: datetime, end_date: datetime) -> List[Tuple[datetime, datetime]]:
+        """Split date range into smaller chunks to optimize API usage."""
+        date_ranges = []
+        current_start = start_date
+        
+        while current_start < end_date:
+            current_end = min(current_start + timedelta(days=1), end_date)
+            date_ranges.append((current_start, current_end))
+            current_start = current_end
+            
+        return date_ranges
 
     def _create_schema_if_not_exists(self):
         """Create the news headlines schema and table if they don't exist."""
@@ -96,7 +182,14 @@ class NewsCollector:
         return True
 
     def _make_request(self, params: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Make a single API request with retry logic."""
+        """Make a single API request with retry logic and caching."""
+        cache_key = self._get_cache_key(params)
+        cached_data = self._get_cached_data(cache_key)
+        
+        if cached_data is not None:
+            logger.info(f"Using cached data for request: {params}")
+            return cached_data
+
         for attempt in range(self.max_retries):
             try:
                 if not self._check_api_limit():
@@ -117,59 +210,84 @@ class NewsCollector:
                 data = response.json()
                 articles = data.get('data', [])
                 
+                # Log credit usage
+                self._log_credit_usage("API Request")
+                
+                # Cache the results
+                self._save_to_cache(cache_key, articles)
+                
                 return articles
             except requests.exceptions.RequestException as e:
                 logger.error(f"Request failed: {str(e)}")
+                self.failed_requests += 1
                 if attempt == self.max_retries - 1:
                     raise
                 time.sleep(self.retry_delay * (2 ** attempt))
         return []
 
     def fetch_data(self, start_date=None, end_date=None):
-        """Fetch news headlines from the API"""
+        """Fetch news headlines from the API with optimized date range handling."""
         if not start_date:
             start_date = datetime.now(timezone.utc) - timedelta(hours=24)
         if not end_date:
             end_date = datetime.now(timezone.utc)
 
-        start_str = start_date.strftime('%Y-%m-%dT%H:%M:%S%z')
-        end_str = end_date.strftime('%Y-%m-%dT%H:%M:%S%z')
+        # Initialize credit tracking
+        self.start_time = datetime.now()
+        self.total_credits_used = 0
+        self.cached_requests = 0
+        self.failed_requests = 0
 
+        # Split date range into daily chunks
+        date_ranges = self._split_date_range(start_date, end_date)
         all_articles = []
-        page = 0
         total_articles = 0
         max_articles = 1000  # Limit total articles to prevent excessive fetching
 
-        while page < self.max_pages and total_articles < max_articles:
-            params = {
-                'limit': self.batch_size,
-                'page': page,
-                'newer_than': start_str,
-                'older_than': end_str
-            }
-
-            try:
-                articles = self._make_request(params)
-                if not articles:
-                    break
-
-                filtered_articles = [
-                    article for article in articles
-                    if start_date <= datetime.fromisoformat(article['created_at'].replace('Z', '+00:00')) <= end_date
-                ]
-
-                all_articles.extend(filtered_articles)
-                total_articles += len(filtered_articles)
-                
-                if len(articles) < self.batch_size or total_articles >= max_articles:
-                    break
-
-                page += 1
-                time.sleep(self.rate_limit_delay)
-
-            except Exception as e:
-                logger.error(f"Page {page} error: {str(e)}")
+        for chunk_start, chunk_end in date_ranges:
+            if total_articles >= max_articles:
                 break
+
+            start_str = chunk_start.strftime('%Y-%m-%dT%H:%M:%S%z')
+            end_str = chunk_end.strftime('%Y-%m-%dT%H:%M:%S%z')
+
+            page = 0
+            while page < self.max_pages and total_articles < max_articles:
+                params = {
+                    'limit': self.batch_size,
+                    'page': page,
+                    'newer_than': start_str,
+                    'older_than': end_str
+                }
+
+                try:
+                    articles = self._make_request(params)
+                    if not articles:
+                        break
+
+                    filtered_articles = [
+                        article for article in articles
+                        if chunk_start <= datetime.fromisoformat(article['created_at'].replace('Z', '+00:00')) <= chunk_end
+                    ]
+
+                    all_articles.extend(filtered_articles)
+                    total_articles += len(filtered_articles)
+                    
+                    if len(articles) < self.batch_size or total_articles >= max_articles:
+                        break
+
+                    page += 1
+                    time.sleep(self.rate_limit_delay)
+
+                except Exception as e:
+                    logger.error(f"Page {page} error: {str(e)}")
+                    break
+
+            # Add delay between date chunks
+            time.sleep(self.rate_limit_delay * 2)
+
+        # Print credit usage summary
+        self._print_credit_summary()
 
         logger.info(f"Fetched {total_articles} articles")
         return all_articles
@@ -227,20 +345,59 @@ class NewsCollector:
             raise
 
     def backfill(self, start_date=None, end_date=None, days=7):
-        """Backfill news headlines for the specified date range."""
+        """Backfill news headlines for the specified date range with optimized API usage."""
         if not start_date:
             start_date = datetime.now(timezone.utc) - timedelta(days=days)
         if not end_date:
             end_date = datetime.now(timezone.utc)
         
         logger.info(f"Backfilling news headlines from {start_date} to {end_date}")
+        
+        # Get the last collected date from the database
+        try:
+            with self.engine.connect() as conn:
+                query = text("SELECT MAX(created_at) as last_date FROM trading.news_headlines")
+                result = conn.execute(query).fetchone()
+                last_collected_date = result[0] if result and result[0] else None
+                
+                if last_collected_date:
+                    # Adjust start_date to avoid re-fetching existing data
+                    start_date = max(start_date, last_collected_date + timedelta(seconds=1))
+                    logger.info(f"Adjusted start date to {start_date} based on last collected date")
+        except Exception as e:
+            logger.warning(f"Could not determine last collected date: {str(e)}")
+        
         self.collect(start_date=start_date, end_date=end_date)
 
 @shared_task
-def run_news_collector():
-    collector = NewsCollector()
-    collector.collect()
-    return "News collection completed."
+def run_news_collector(minutes: int = 10) -> Dict[str, Any]:
+    """Run the news collector for the specified time window."""
+    try:
+        # Check if market is open
+        if not is_market_open():
+            logger.info("Market is closed, skipping collection")
+            return {"status": "skipped", "reason": "market_closed"}
+
+        # Calculate time window
+        end_date = datetime.now(timezone.utc)
+        start_date = end_date - timedelta(minutes=minutes)
+        
+        logger.info(f"Starting news collection from {start_date} to {end_date}")
+        
+        # Initialize collector and run collection
+        collector = NewsCollector()
+        collector.collect(start_date=start_date, end_date=end_date)
+        
+        return {
+            "status": "success",
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "credits_used": collector.total_credits_used,
+            "articles_collected": collector.total_articles
+        }
+    except Exception as e:
+        logger.error(f"News collection failed: {str(e)}", exc_info=True)
+        return {"status": "error", "error": str(e)}
 
 if __name__ == "__main__":
     collector = NewsCollector()

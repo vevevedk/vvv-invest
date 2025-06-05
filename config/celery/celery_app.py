@@ -39,10 +39,17 @@ app.conf.beat_schedule = {
         'options': {'queue': 'dark_pool_queue'},
         'kwargs': {'hours': 24}  # Collect trades for the last 24 hours
     },
+    'run-news-collector-every-5-mins': {
+        'task': 'collectors.news.newscollector.run_news_collector',
+        'schedule': crontab(minute='*/5'),
+        'options': {'queue': 'news_queue'},
+        'kwargs': {'minutes': 10}  # Collect news from last 10 minutes
+    },
 }
 
 # Import tasks after app configuration
 from collectors.darkpool_tasks import run_darkpool_collector
+from collectors.news.newscollector import run_news_collector
 
 # Register darkpool tasks
 @app.task(name='collectors.darkpool_tasks.run_darkpool_collector')
@@ -54,4 +61,16 @@ def run_darkpool_collector_task(hours: int = 24):
         return result
     except Exception as e:
         logger.error(f"Error in darkpool collector task: {str(e)}", exc_info=True)
+        return {"status": "error", "error": str(e)}
+
+# Register news tasks
+@app.task(name='collectors.news.newscollector.run_news_collector')
+def run_news_collector_task(minutes: int = 10):
+    logger.info(f"Starting news collector task for last {minutes} minutes")
+    try:
+        result = run_news_collector(minutes=minutes)
+        logger.info(f"News collector task completed with status: {result['status']}")
+        return result
+    except Exception as e:
+        logger.error(f"Error in news collector task: {str(e)}", exc_info=True)
         return {"status": "error", "error": str(e)}

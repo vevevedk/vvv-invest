@@ -29,41 +29,52 @@ EASTERN = pytz.timezone('US/Eastern')
 def is_market_open() -> bool:
     """
     Check if the US stock market is currently open.
-    Returns True if market is open, False otherwise.
+    Market hours: 9:30 AM - 4:00 PM Eastern Time, Monday-Friday
     """
-    # Get current time in US/Eastern timezone
-    now = datetime.now(EASTERN)
+    # Get current time in Eastern Time
+    eastern = pytz.timezone('US/Eastern')
+    current_time = datetime.now(eastern)
     
     # Check if it's a weekday
-    if now.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
-        logger.info(f"Market is closed - Weekend: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+    if current_time.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
         return False
     
-    # Check if it's a holiday
-    if now.date() in [holiday.date() for holiday in MARKET_HOLIDAYS]:
-        logger.info(f"Market is closed - Holiday: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-        return False
+    # Check if it's within market hours
+    market_open = time(9, 30)  # 9:30 AM
+    market_close = time(16, 0)  # 4:00 PM
+    current_time_et = current_time.time()
     
-    # Check if it's during market hours
-    current_time = now.time()
-    return MARKET_OPEN <= current_time <= MARKET_CLOSE
+    return market_open <= current_time_et <= market_close
 
 def get_next_market_open() -> datetime:
-    """
-    Calculate the next time the market will be open.
-    Returns a datetime object in US/Eastern timezone.
-    """
-    now = datetime.now(EASTERN)
+    """Get the next time the market will open."""
+    eastern = pytz.timezone('US/Eastern')
+    current_time = datetime.now(eastern)
     
-    # If market is open today, return today's open
-    if now.time() < MARKET_OPEN and now.weekday() < 5:
-        next_open = now.replace(hour=MARKET_OPEN.hour, minute=MARKET_OPEN.minute, second=0, microsecond=0)
-        if next_open.date() not in [holiday.date() for holiday in MARKET_HOLIDAYS]:
-            return next_open
+    # If it's after market close, move to next day
+    if current_time.time() > time(16, 0):
+        current_time = current_time.replace(hour=9, minute=30, second=0, microsecond=0) + timedelta(days=1)
     
-    # Start checking from tomorrow
-    days_ahead = 1
-    while True:
-        next_day = now + timedelta(days=days_ahead)
-        if next_day.weekday() < 5 and next_day.date() not in [holiday.date() for holiday in MARKET_HOLIDAYS]:
-            return next_day.replace(hour=MARKET_OPEN.hour, minute=MARKET_OPEN.minute, second=0, microsecond=0) 
+    # If it's before market open, use today
+    if current_time.time() < time(9, 30):
+        current_time = current_time.replace(hour=9, minute=30, second=0, microsecond=0)
+    
+    # If it's weekend, move to next Monday
+    while current_time.weekday() >= 5:
+        current_time = current_time + timedelta(days=1)
+    
+    return current_time
+
+def get_market_status() -> dict:
+    """Get detailed market status information."""
+    is_open = is_market_open()
+    eastern = pytz.timezone('US/Eastern')
+    current_time = datetime.now(eastern)
+    
+    status = {
+        "is_market_open": is_open,
+        "current_time_et": current_time.strftime("%Y-%m-%d %H:%M:%S %Z"),
+        "next_market_open": get_next_market_open().strftime("%Y-%m-%d %H:%M:%S %Z")
+    }
+    
+    return status 
