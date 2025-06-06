@@ -59,11 +59,12 @@ class CollectorMonitor:
         try:
             with psycopg2.connect(**self.db_config) as conn:
                 with conn.cursor(cursor_factory=DictCursor) as cur:
-                    # Get the most recent record
+                    # Use collection_time for darkpool, collected_at for others
+                    column = 'collection_time' if collector_type == 'darkpool' else 'collected_at'
                     cur.execute(f"""
-                        SELECT collected_at 
+                        SELECT {column} 
                         FROM {collector['table']} 
-                        ORDER BY collected_at DESC 
+                        ORDER BY {column} DESC 
                         LIMIT 1
                     """)
                     result = cur.fetchone()
@@ -77,7 +78,7 @@ class CollectorMonitor:
                             'last_update': None
                         }
                     
-                    last_update = result['collected_at']
+                    last_update = result[column]
                     if last_update.tzinfo is None:
                         last_update = last_update.replace(tzinfo=timezone.utc)
                     time_diff = (current_time - last_update).total_seconds()
