@@ -9,10 +9,33 @@ from flow_analysis.config.api_config import (
 )
 from flow_analysis.config.watchlist import SYMBOLS
 from collectors.utils.market_utils import is_market_open, get_next_market_open
+import psycopg2
+import os
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def log_to_db(level, message):
+    try:
+        conn = psycopg2.connect(
+            dbname=os.getenv('DB_NAME'),
+            user=os.getenv('DB_USER'),
+            password=os.getenv('DB_PASSWORD'),
+            host=os.getenv('DB_HOST'),
+            port=os.getenv('DB_PORT'),
+            sslmode=os.getenv('DB_SSLMODE', 'prefer')
+        )
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO trading.collector_logs (timestamp, level, message) VALUES (%s, %s, %s)",
+            (datetime.utcnow(), level, message)
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"Failed to log to DB: {e}")
 
 def run_darkpool_collector(hours: int = 24):
     """Run the dark pool collector to fetch and process dark pool trades for the last N hours."""
@@ -22,7 +45,9 @@ def run_darkpool_collector(hours: int = 24):
         # Check if market is open
         if not is_market_open():
             next_open = get_next_market_open()
-            logger.info(f"Market is closed. Next market open: {next_open}")
+            msg = f"Market is closed. Next market open: {next_open}"
+            logger.info(msg)
+            log_to_db('INFO', msg)
             return {"status": "market_closed", "next_open": next_open.isoformat()}
         
         collector = DarkPoolCollector()
