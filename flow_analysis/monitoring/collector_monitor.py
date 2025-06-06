@@ -82,7 +82,27 @@ class CollectorMonitor:
                     if last_update.tzinfo is None:
                         last_update = last_update.replace(tzinfo=timezone.utc)
                     time_diff = (current_time - last_update).total_seconds()
-                    
+
+                    # New logic: if darkpool collector is running and market is closed, set status to 'idle'
+                    if collector_type == 'darkpool':
+                        # Check recent logs for 'Market is closed' message
+                        cur.execute("""
+                            SELECT message FROM trading.collector_logs
+                            WHERE level = 'INFO' AND message ILIKE '%market is closed%'
+                            ORDER BY timestamp DESC LIMIT 1
+                        """)
+                        log_result = cur.fetchone()
+                        if log_result and 'market is closed' in log_result['message'].lower():
+                            collector['status'] = 'idle'
+                            status = 'idle'
+                            message = log_result['message']
+                            collector['last_check'] = current_time
+                            return {
+                                'status': status,
+                                'message': message,
+                                'last_update': last_update
+                            }
+
                     if time_diff > collector['interval'] * 2:
                         collector['status'] = 'stalled'
                         status = 'stalled'
