@@ -21,7 +21,9 @@ import pickle
 from collectors.schema_validation import NewsSchemaValidator
 from config.db_config import get_db_config
 from config.api_config import UW_BASE_URL, DEFAULT_HEADERS, REQUEST_TIMEOUT
-from collectors.utils.logging_config import setup_logging, log_collector_summary
+from collectors.utils.logging_config import (
+    setup_logging, log_heartbeat, log_collector_summary, log_error, log_warning, log_info
+)
 from collectors.utils.market_utils import is_market_open
 
 # Set up logging
@@ -326,12 +328,22 @@ class NewsCollector:
             raise
 
     def collect(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> None:
-        """Collect news headlines and save to database."""
+        log_heartbeat('news', status='running')
+        self.start_time = datetime.now()
         try:
             headlines = self.fetch_data(start_date, end_date)
             self.save_headlines(headlines)
+            log_collector_summary(
+                collector_name='news',
+                start_time=self.start_time,
+                end_time=datetime.now(),
+                items_collected=self.total_articles,
+                api_credits_used=self.total_credits_used,
+                task_type='collect',
+                status='completed'
+            )
         except Exception as e:
-            logger.error(f"Collection error: {str(e)}")
+            log_error('news', e, task_type='collect')
             raise
 
     def get_all_headlines(self) -> pd.DataFrame:
@@ -345,58 +357,53 @@ class NewsCollector:
             raise
 
     def backfill(self, start_date=None, end_date=None, days=7):
-        """Backfill news headlines for the specified date range with optimized API usage."""
-        if not start_date:
-            start_date = datetime.now(timezone.utc) - timedelta(days=days)
-        if not end_date:
-            end_date = datetime.now(timezone.utc)
-        
-        logger.info(f"Backfilling news headlines from {start_date} to {end_date}")
-        
-        # Get the last collected date from the database
+        log_heartbeat('news', status='backfill')
+        self.start_time = datetime.now()
         try:
-            with self.engine.connect() as conn:
-                query = text("SELECT MAX(created_at) as last_date FROM trading.news_headlines")
-                result = conn.execute(query).fetchone()
-                last_collected_date = result[0] if result and result[0] else None
-                
-                if last_collected_date:
-                    # Adjust start_date to avoid re-fetching existing data
-                    start_date = max(start_date, last_collected_date + timedelta(seconds=1))
-                    logger.info(f"Adjusted start date to {start_date} based on last collected date")
+            if not start_date:
+                start_date = datetime.now(timezone.utc) - timedelta(days=days)
+            if not end_date:
+                end_date = datetime.now(timezone.utc)
+            
+            logger.info(f"Backfilling news headlines from {start_date} to {end_date}")
+            
+            # Get the last collected date from the database
+            try:
+                with self.engine.connect() as conn:
+                    query = text("SELECT MAX(created_at) as last_date FROM trading.news_headlines")
+                    result = conn.execute(query).fetchone()
+                    last_collected_date = result[0] if result and result[0] else None
+                    
+                    if last_collected_date:
+                        # Adjust start_date to avoid re-fetching existing data
+                        start_date = max(start_date, last_collected_date + timedelta(seconds=1))
+                        logger.info(f"Adjusted start date to {start_date} based on last collected date")
+            except Exception as e:
+                logger.warning(f"Could not determine last collected date: {str(e)}")
+            
+            self.collect(start_date=start_date, end_date=end_date)
+            log_collector_summary(
+                collector_name='news',
+                start_time=self.start_time,
+                end_time=datetime.now(),
+                items_collected=self.total_articles,
+                api_credits_used=self.total_credits_used,
+                task_type='backfill',
+                status='completed'
+            )
         except Exception as e:
-            logger.warning(f"Could not determine last collected date: {str(e)}")
-        
-        self.collect(start_date=start_date, end_date=end_date)
+            log_error('news', e, task_type='backfill')
+            raise
 
 @shared_task
 def run_news_collector(minutes: int = 10) -> Dict[str, Any]:
-    """Run the news collector for the specified time window."""
     try:
-        # Check if market is open
-        if not is_market_open():
-            logger.info("Market is closed, skipping collection")
-            return {"status": "skipped", "reason": "market_closed"}
-
-        # Calculate time window
-        end_date = datetime.now(timezone.utc)
-        start_date = end_date - timedelta(minutes=minutes)
-        
-        logger.info(f"Starting news collection from {start_date} to {end_date}")
-        
-        # Initialize collector and run collection
+        log_heartbeat('news', status='running')
         collector = NewsCollector()
-        collector.collect(start_date=start_date, end_date=end_date)
-        
-        return {
-            "status": "success",
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
-            "credits_used": collector.total_credits_used,
-            "articles_collected": collector.total_articles
-        }
+        collector.collect()
+        return {"status": "success"}
     except Exception as e:
-        logger.error(f"News collection failed: {str(e)}", exc_info=True)
+        log_error('news', e, task_type='run_news_collector')
         return {"status": "error", "error": str(e)}
 
 if __name__ == "__main__":
