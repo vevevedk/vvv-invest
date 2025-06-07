@@ -16,7 +16,7 @@ import os
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def log_to_db(level, message):
+def log_to_db(collector_name, level, message):
     try:
         conn = psycopg2.connect(
             dbname=os.getenv('DB_NAME'),
@@ -28,8 +28,8 @@ def log_to_db(level, message):
         )
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO trading.collector_logs (timestamp, level, message) VALUES (%s, %s, %s)",
-            (datetime.utcnow(), level, message)
+            "INSERT INTO trading.collector_logs (timestamp, collector_name, level, message) VALUES (%s, %s, %s, %s)",
+            (datetime.utcnow(), collector_name, level, message)
         )
         conn.commit()
         cur.close()
@@ -47,7 +47,7 @@ def run_darkpool_collector(hours: int = 24):
             next_open = get_next_market_open()
             msg = f"Market is closed. Next market open: {next_open}"
             logger.info(msg)
-            log_to_db('INFO', msg)
+            log_to_db('darkpool', 'INFO', msg)
             return {"status": "market_closed", "next_open": next_open.isoformat()}
         
         collector = DarkPoolCollector()
