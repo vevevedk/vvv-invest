@@ -9,6 +9,7 @@ from functools import wraps
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from flow_analysis.monitoring.collector_monitor import CollectorMonitor
 from flow_analysis.config.env_config import DB_CONFIG
+import psycopg2
 
 app = Flask(__name__)
 # Generate a secure secret key if not set
@@ -64,23 +65,54 @@ def status():
 @app.route('/api/history')
 @login_required
 def history():
-    # Get historical data for the last 24 hours
-    end_time = datetime.utcnow()
-    start_time = end_time - timedelta(hours=24)
+    """Get historical status information for all collectors."""
+    hours = request.args.get('hours', default=24, type=int)
+    history_data = {}
     
-    # This is a placeholder - implement actual historical data collection
-    history_data = {
-        'news': {
-            'timestamps': [],
-            'status': []
-        },
-        'darkpool': {
-            'timestamps': [],
-            'status': []
-        }
-    }
+    for collector_type in monitor.collectors:
+        history_data[collector_type] = monitor.get_collector_history(collector_type, hours)
     
     return jsonify(history_data)
+
+@app.route('/api/logs')
+@login_required
+def logs():
+    """Get recent logs for all collectors."""
+    try:
+        with psycopg2.connect(**DB_CONFIG) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT 
+                        timestamp,
+                        collector_name,
+                        level,
+                        message,
+                        task_type,
+                        details,
+                        is_heartbeat,
+                        status,
+                        error_details
+                    FROM trading.collector_logs
+                    WHERE timestamp > NOW() - INTERVAL '1 hour'
+                    ORDER BY timestamp DESC
+                    LIMIT 100
+                """)
+                logs = cur.fetchall()
+                
+                # Convert to list of dicts
+                return jsonify([{
+                    'timestamp': log[0].isoformat(),
+                    'collector': log[1],
+                    'level': log[2],
+                    'message': log[3],
+                    'task_type': log[4],
+                    'details': log[5],
+                    'is_heartbeat': log[6],
+                    'status': log[7],
+                    'error_details': log[8]
+                } for log in logs])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     # Only allow local connections in production

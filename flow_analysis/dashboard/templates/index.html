@@ -13,6 +13,41 @@
         .status-stalled { background-color: #f8d7da; }
         .status-error { background-color: #f8d7da; }
         .status-no-data { background-color: #e2e3e5; }
+        .status-waiting { background-color: #cce5ff; }
+        .status-unknown { background-color: #f8f9fa; }
+        
+        .log-entry {
+            padding: 8px;
+            margin-bottom: 4px;
+            border-radius: 4px;
+        }
+        .log-error { background-color: #f8d7da; }
+        .log-warning { background-color: #fff3cd; }
+        .log-info { background-color: #d1ecf1; }
+        
+        .heartbeat-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .heartbeat-active { background-color: #28a745; }
+        .heartbeat-stale { background-color: #dc3545; }
+        
+        .status-badge {
+            font-size: 0.9em;
+            padding: 0.4em 0.6em;
+        }
+        
+        .error-details {
+            font-family: monospace;
+            white-space: pre-wrap;
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -33,7 +68,9 @@
                         <h5 class="card-title">System Health</h5>
                         <p class="card-text">
                             Overall Status: 
-                            <span class="badge {% if health.overall_status == 'healthy' %}bg-success{% else %}bg-danger{% endif %}">
+                            <span class="badge {% if health.overall_status == 'healthy' %}bg-success
+                                             {% elif health.overall_status == 'degraded' %}bg-warning
+                                             {% else %}bg-danger{% endif %}">
                                 {{ health.overall_status }}
                             </span>
                         </p>
@@ -45,14 +82,18 @@
         <div class="row">
             {% for collector_type, status in health.collectors.items() %}
             <div class="col-md-6">
-                <div class="card status-card status-{{ status.status }}">
+                <div class="card status-card status-{{ status.status }}" data-collector="{{ collector_type }}">
                     <div class="card-body">
-                        <h5 class="card-title">{{ collector_type.title() }} Collector</h5>
+                        <h5 class="card-title">
+                            {{ collector_type.title() }} Collector
+                            <span class="heartbeat-indicator {% if status.status in ['running', 'delayed', 'waiting_for_market_open'] %}heartbeat-active{% else %}heartbeat-stale{% endif %}"></span>
+                        </h5>
                         <p class="card-text">
                             Status: 
-                            <span class="badge {% if status.status == 'running' %}bg-success
-                                             {% elif status.status == 'delayed' %}bg-warning
-                                             {% else %}bg-danger{% endif %}">
+                            <span class="badge status-badge {% if status.status == 'running' %}bg-success
+                                                          {% elif status.status == 'delayed' %}bg-warning
+                                                          {% elif status.status == 'waiting_for_market_open' %}bg-info
+                                                          {% else %}bg-danger{% endif %}">
                                 {{ status.status }}
                             </span>
                         </p>
@@ -62,6 +103,12 @@
                         <p class="card-text">
                             <small class="text-muted">{{ status.message }}</small>
                         </p>
+                        {% if status.error_details %}
+                        <div class="error-details">
+                            <strong>Error Details:</strong>
+                            <pre>{{ status.error_details | tojson(indent=2) }}</pre>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -78,9 +125,33 @@
                 </div>
             </div>
         </div>
+
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Recent Logs</h5>
+                        <div id="logContainer">
+                            <!-- Logs will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
+        // Status colors for the chart
+        const statusColors = {
+            'running': '#28a745',
+            'delayed': '#ffc107',
+            'stalled': '#dc3545',
+            'error': '#dc3545',
+            'no_data': '#6c757d',
+            'waiting_for_market_open': '#17a2b8',
+            'unknown': '#f8f9fa'
+        };
+
         // Fetch and update status every 30 seconds
         function updateStatus() {
             fetch('/api/status')
@@ -94,6 +165,33 @@
                             card.querySelector('.status-badge').textContent = status.status;
                             card.querySelector('.last-update').textContent = status.last_update;
                             card.querySelector('.status-message').textContent = status.message;
+                            
+                            // Update heartbeat indicator
+                            const indicator = card.querySelector('.heartbeat-indicator');
+                            indicator.className = `heartbeat-indicator ${
+                                status.status in ['running', 'delayed', 'waiting_for_market_open'] 
+                                ? 'heartbeat-active' 
+                                : 'heartbeat-stale'
+                            }`;
+                            
+                            // Update error details if present
+                            const errorDiv = card.querySelector('.error-details');
+                            if (status.error_details) {
+                                if (!errorDiv) {
+                                    const newErrorDiv = document.createElement('div');
+                                    newErrorDiv.className = 'error-details';
+                                    newErrorDiv.innerHTML = `
+                                        <strong>Error Details:</strong>
+                                        <pre>${JSON.stringify(status.error_details, null, 2)}</pre>
+                                    `;
+                                    card.querySelector('.card-body').appendChild(newErrorDiv);
+                                } else {
+                                    errorDiv.querySelector('pre').textContent = 
+                                        JSON.stringify(status.error_details, null, 2);
+                                }
+                            } else if (errorDiv) {
+                                errorDiv.remove();
+                            }
                         }
                     });
                 });
@@ -104,18 +202,92 @@
             fetch('/api/history')
                 .then(response => response.json())
                 .then(data => {
-                    // Update chart with historical data
-                    // This is a placeholder - implement actual chart update logic
+                    const ctx = document.getElementById('statusChart').getContext('2d');
+                    
+                    // Prepare data for each collector
+                    const datasets = Object.entries(data).map(([collector, history]) => {
+                        return {
+                            label: collector,
+                            data: history.map(h => ({
+                                x: new Date(h.timestamp),
+                                y: h.status,
+                                details: h
+                            })),
+                            borderColor: statusColors[history[0]?.status] || '#6c757d',
+                            fill: false
+                        };
+                    });
+                    
+                    // Update or create chart
+                    if (window.statusChart) {
+                        window.statusChart.data.datasets = datasets;
+                        window.statusChart.update();
+                    } else {
+                        window.statusChart = new Chart(ctx, {
+                            type: 'line',
+                            data: { datasets },
+                            options: {
+                                responsive: true,
+                                scales: {
+                                    x: {
+                                        type: 'time',
+                                        time: {
+                                            unit: 'hour'
+                                        }
+                                    },
+                                    y: {
+                                        type: 'category',
+                                        labels: Object.keys(statusColors)
+                                    }
+                                },
+                                plugins: {
+                                    tooltip: {
+                                        callbacks: {
+                                            label: function(context) {
+                                                const details = context.raw.details;
+                                                return [
+                                                    `Status: ${details.status}`,
+                                                    `Message: ${details.message}`,
+                                                    `Time: ${new Date(details.timestamp).toLocaleString()}`
+                                                ];
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    }
+                });
+        }
+
+        // Fetch and update logs
+        function updateLogs() {
+            fetch('/api/logs')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('logContainer');
+                    container.innerHTML = data.map(log => `
+                        <div class="log-entry log-${log.level.toLowerCase()}">
+                            <strong>${new Date(log.timestamp).toLocaleString()}</strong>
+                            <span class="badge bg-${log.level === 'ERROR' ? 'danger' : 
+                                                   log.level === 'WARNING' ? 'warning' : 
+                                                   'info'}">${log.level}</span>
+                            <span>${log.message}</span>
+                            ${log.details ? `<pre>${JSON.stringify(log.details, null, 2)}</pre>` : ''}
+                        </div>
+                    `).join('');
                 });
         }
 
         // Initial load
         updateStatus();
         updateHistory();
+        updateLogs();
 
         // Set up periodic updates
-        setInterval(updateStatus, 30000);
-        setInterval(updateHistory, 300000);  // Update history every 5 minutes
+        setInterval(updateStatus, 30000);  // Every 30 seconds
+        setInterval(updateHistory, 300000);  // Every 5 minutes
+        setInterval(updateLogs, 60000);  // Every minute
     </script>
 </body>
 </html> 
