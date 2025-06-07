@@ -258,15 +258,19 @@ class CollectorMonitor:
                         
                         # Get latest heartbeat time
                         last_heartbeat = latest_heartbeats.get(collector_name)
-                        
+                        # Ensure timestamps are timezone-aware
+                        if last_heartbeat and last_heartbeat.tzinfo is None:
+                            last_heartbeat = last_heartbeat.replace(tzinfo=timezone.utc)
+                        if timestamp and timestamp.tzinfo is None:
+                            timestamp = timestamp.replace(tzinfo=timezone.utc)
                         # Determine collector status
                         if error_details:
                             status = 'error'
                         elif not last_heartbeat:
                             status = 'no_data'
-                        elif datetime.utcnow() - last_heartbeat > self.heartbeat_timeout:
+                        elif datetime.utcnow().replace(tzinfo=timezone.utc) - last_heartbeat > self.heartbeat_timeout:
                             status = 'stalled'
-                        elif status == 'running' and datetime.utcnow() - timestamp > self.stall_threshold:
+                        elif status == 'running' and datetime.utcnow().replace(tzinfo=timezone.utc) - timestamp > self.stall_threshold:
                             status = 'delayed'
                         
                         collector_statuses[collector_name] = {
