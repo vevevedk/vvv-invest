@@ -27,13 +27,13 @@ MARKET_HOLIDAYS = [
 SYMBOLS = [
     "SPY",  # S&P 500 ETF
     "QQQ",  # Nasdaq 100 ETF
-    "GLD",  # Gold ETF
-    "AAPL", # Apple Inc.
-    "TSLA", # Tesla Inc.
-    "MSFT", # Microsoft Corp.
-    "NVDA", # NVIDIA Corp.
-    "AMD",  # Advanced Micro Devices
-    "PLTR"  # Palantir Technologies
+    # "GLD",  # Gold ETF
+    # "AAPL", # Apple Inc.
+    # "TSLA", # Tesla Inc.
+    # "MSFT", # Microsoft Corp.
+    # "NVDA", # NVIDIA Corp.
+    # "AMD",  # Advanced Micro Devices
+    # "PLTR"  # Palantir Technologies
 ]
 
 # Analysis Thresholds

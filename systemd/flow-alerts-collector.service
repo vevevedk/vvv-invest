@@ -1,0 +1,17 @@
+[Unit]
+Description=Flow Alerts Collector Service
+After=network.target
+
+[Service]
+Type=simple
+User=darkpool_collector
+Group=darkpool_collector
+WorkingDirectory=/opt/darkpool_collector
+Environment=PYTHONPATH=/opt/darkpool_collector
+Environment=ENV_FILE=.env.prod
+ExecStart=/opt/darkpool_collector/venv/bin/python -m flow_analysis.scripts.flow_alerts_collector
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target 

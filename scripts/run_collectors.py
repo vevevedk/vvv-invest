@@ -1,190 +1,152 @@
 #!/usr/bin/env python3
+# Last modified: 2024-06-03 10:35:00
 
 import os
 import sys
-import logging
 import time
+import logging
+from pathlib import Path
+from datetime import datetime, timedelta
 import argparse
-from datetime import datetime, timedelta, timezone
+from dotenv import load_dotenv
 import pandas as pd
 from sqlalchemy import create_engine, text
 
-# Add project root to Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+print(f"Executing file: {__file__}")
+print(f"Current working directory: {os.getcwd()}")
 
-# Set environment file to local
-os.environ['ENV_FILE'] = '.env.local'
+# Add the project root to the Python path
+project_root = Path(__file__).parent.parent
+sys.path.append(str(project_root))
 
+# Parse command line arguments first
+parser = argparse.ArgumentParser(description='Run data collectors')
+parser.add_argument('--env', type=str, default='', help='Environment to use (empty for .env)')
+parser.add_argument('--backfill', action='store_true', help='Run in backfill mode')
+parser.add_argument('--days', type=int, default=7, help='Number of days to backfill')
+args = parser.parse_args()
+
+# Set environment file
+env_file = '.env' if not args.env else f'.env.{args.env}'
+os.environ['ENV_FILE'] = env_file
+
+# Load environment variables
+load_dotenv(env_file)
+print(f"ℹ️ Using environment file: {env_file}")
+
+# Now import the collectors after environment is set
 from collectors.darkpool.darkpool_collector import DarkPoolCollector
+from collectors.earnings.earnings_collector import EarningsCollector
+from collectors.economic.economic_collector import EconomicCollector
 from collectors.news.newscollector import NewsCollector
-from config.db_config import get_db_config
-from flow_analysis.config.watchlist import SYMBOLS
+from flow_analysis.scripts.flow_alerts_collector import FlowAlertsCollector
+from collectors.utils.market_utils import is_market_open, get_next_market_open
+from flow_analysis.config.api_config import UW_API_TOKEN
+from flow_analysis.config.db_config import get_db_config
 
-# Configure logging to be less verbose
+# Set up logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('collectors.log')
+    ]
 )
-# Reduce verbosity of requests and urllib3
-logging.getLogger('urllib3').setLevel(logging.WARNING)
-logging.getLogger('requests').setLevel(logging.WARNING)
-
 logger = logging.getLogger(__name__)
 
-def parse_args():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='Run data collectors')
-    parser.add_argument('--env', choices=['local', 'prod'], default='local',
-                      help='Environment to run against (local or prod)')
-    return parser.parse_args()
-
-def export_darkpool_trades(db_config, hours=24):
-    """Export dark pool trades from the last N hours to CSV."""
+def export_data_to_csv():
+    """Export all collector data to CSV files."""
     try:
-        # Create database connection
+        # Create exports directory if it doesn't exist
+        exports_dir = Path("exports")
+        exports_dir.mkdir(exist_ok=True)
+        
+        # Get database connection
+        db_config = get_db_config()
         engine = create_engine(
-            f"postgresql://{db_config['user']}:{db_config['password']}@"
-            f"{db_config['host']}:{db_config['port']}/{db_config['dbname']}"
+            f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['dbname']}?sslmode={db_config['sslmode']}"
         )
         
-        # Calculate time range
-        end_time = datetime.now(timezone.utc)
-        start_time = end_time - timedelta(hours=hours)
+        # Define tables to export
+        tables = {
+            'darkpool_trades': 'trading.darkpool_trades',
+            'news_headlines': 'trading.news_headlines',
+            'economic_events': 'trading.economic_events',
+            'earnings': 'trading.earnings',
+            'flow_alerts': 'trading.flow_alerts'
+        }
         
-        # Query to get trades from last N hours
-        query = text("""
-            SELECT *
-            FROM trading.darkpool_trades
-            WHERE executed_at >= :start_time
-            AND executed_at <= :end_time
-            ORDER BY executed_at DESC
-        """)
-        
-        # Execute query and convert to DataFrame
-        with engine.connect() as conn:
-            df = pd.read_sql(
-                query,
-                conn,
-                params={"start_time": start_time, "end_time": end_time}
-            )
-        
-        # Create exports directory if it doesn't exist
-        os.makedirs("exports", exist_ok=True)
-        
-        # Generate filename with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"exports/darkpool_trades_{timestamp}.csv"
-        
-        # Export to CSV
-        df.to_csv(filename, index=False)
-        logger.info(f"Exported {len(df)} dark pool trades to {filename}")
-        
-        return len(df)
-        
+        # Export each table
+        for table_name, full_table_name in tables.items():
+            try:
+                # Read data from database
+                query = f"SELECT * FROM {full_table_name}"
+                df = pd.read_sql(query, engine)
+                
+                if not df.empty:
+                    # Generate filename with timestamp
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    filename = exports_dir / f"{table_name}_{timestamp}.csv"
+                    
+                    # Export to CSV
+                    df.to_csv(filename, index=False)
+                    logger.info(f"Exported {len(df)} records from {table_name} to {filename}")
+                else:
+                    logger.warning(f"No data found in {table_name}")
+                    
+            except Exception as e:
+                logger.error(f"Error exporting {table_name}: {str(e)}")
+                continue
+                
     except Exception as e:
-        logger.error(f"Error exporting dark pool trades: {str(e)}")
-        return 0
+        logger.error(f"Error in export_data_to_csv: {str(e)}")
 
-def export_news_headlines(db_config, hours=24):
-    """Export news headlines from the last N hours to CSV."""
-    try:
-        # Create database connection
-        engine = create_engine(
-            f"postgresql://{db_config['user']}:{db_config['password']}@"
-            f"{db_config['host']}:{db_config['port']}/{db_config['dbname']}"
-        )
-        
-        # Calculate time range
-        end_time = datetime.now(timezone.utc)
-        start_time = end_time - timedelta(hours=hours)
-        
-        # Query to get headlines from last N hours
-        query = text("""
-            SELECT *
-            FROM trading.news_headlines
-            WHERE created_at >= :start_time
-            AND created_at <= :end_time
-            ORDER BY created_at DESC
-        """)
-        
-        # Execute query and convert to DataFrame
-        with engine.connect() as conn:
-            df = pd.read_sql(
-                query,
-                conn,
-                params={"start_time": start_time, "end_time": end_time}
-            )
-        
-        # Create exports directory if it doesn't exist
-        os.makedirs("exports", exist_ok=True)
-        
-        # Generate filename with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"exports/news_headlines_{timestamp}.csv"
-        
-        # Export to CSV
-        df.to_csv(filename, index=False)
-        logger.info(f"Exported {len(df)} news headlines to {filename}")
-        
-        return len(df)
-        
-    except Exception as e:
-        logger.error(f"Error exporting news headlines: {str(e)}")
-        return 0
-
-def main():
-    """Run collectors in sequence and export data."""
-    args = parse_args()
-    
-    # Set environment file based on argument
-    env_file = '.env.local' if args.env == 'local' else '.env.prod'
-    os.environ['ENV_FILE'] = env_file
-    logger.info(f"Using environment file: {env_file}")
-    
-    start_time = time.time()
+def run_collectors(backfill=False, days=7):
+    """Run all collectors in sequence."""
     logger.info("Starting collector run sequence")
     
+    # Initialize collectors
+    collectors = [
+        DarkPoolCollector(),
+        EarningsCollector(),
+        EconomicCollector(),
+        NewsCollector(),
+        FlowAlertsCollector(get_db_config(), UW_API_TOKEN)
+    ]
+    
+    # Run each collector
+    for collector in collectors:
+        collector_name = collector.__class__.__name__
+        logger.info(f"Starting {collector_name}")
+        
+        start_time = time.time()
+        try:
+            if backfill:
+                collector.backfill(days=days)
+            else:
+                collector.run()
+        except Exception as e:
+            logger.error(f"Error in {collector_name}: {str(e)}")
+            continue
+            
+        duration = time.time() - start_time
+        logger.info(f"{collector_name}: {duration:.1f}s")
+    
+    # Export all data to CSV files
+    logger.info("Exporting all collector data to CSV files...")
+    export_data_to_csv()
+    logger.info("Data export completed")
+        
+def main():
+    """Main entry point."""
     try:
-        # Get database configuration
-        db_config = get_db_config()
-        
-        # Run dark pool collector
-        logger.info("Starting dark pool collector")
-        darkpool_start = time.time()
-        darkpool_collector = DarkPoolCollector()
-        darkpool_collector.collect_recent_trades(symbols=SYMBOLS, hours=24)
-        darkpool_duration = time.time() - darkpool_start
-        logger.info(f"Dark pool collector completed in {darkpool_duration:.2f} seconds")
-        
-        # Export dark pool trades
-        logger.info("Exporting dark pool trades")
-        export_start = time.time()
-        num_darkpool_trades = export_darkpool_trades(db_config)
-        export_duration = time.time() - export_start
-        logger.info(f"Exported {num_darkpool_trades} dark pool trades in {export_duration:.2f} seconds")
-        
-        # Run news collector
-        logger.info("Starting news collector")
-        news_start = time.time()
-        news_collector = NewsCollector()
-        news_collector.collect()
-        news_duration = time.time() - news_start
-        logger.info(f"News collector completed in {news_duration:.2f} seconds")
-        
-        # Export news headlines
-        logger.info("Exporting news headlines")
-        export_start = time.time()
-        num_news_headlines = export_news_headlines(db_config)
-        export_duration = time.time() - export_start
-        logger.info(f"Exported {num_news_headlines} news headlines in {export_duration:.2f} seconds")
-        
-        # Calculate total duration
-        total_duration = time.time() - start_time
-        logger.info(f"Total run completed in {total_duration:.2f} seconds")
-        
+        run_collectors(backfill=args.backfill, days=args.days)
+    except KeyboardInterrupt:
+        logger.info("Collector run interrupted by user")
     except Exception as e:
-        logger.error(f"Error in collector run sequence: {str(e)}")
+        logger.error(f"Collector run failed: {str(e)}")
         sys.exit(1)
-
+        
 if __name__ == "__main__":
     main() 

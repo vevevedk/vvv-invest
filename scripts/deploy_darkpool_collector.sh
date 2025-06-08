@@ -7,7 +7,7 @@ echo "Deploying Dark Pool Collector..."
 
 # Create necessary directories
 sudo mkdir -p /opt/darkpool_collector
-sudo mkdir -p /var/lib/celery/beat
+sudo mkdir -p /var/log/darkpool_collector
 
 # Copy service files
 sudo cp config/systemd/darkpool-collector-worker.service /etc/systemd/system/
@@ -20,9 +20,12 @@ sudo cp -r collectors config scripts flow_analysis /opt/darkpool_collector/
 sudo python3 -m venv /opt/darkpool_collector/venv
 sudo /opt/darkpool_collector/venv/bin/pip install -r requirements.txt
 
+# Set up logging
+sudo touch /var/log/darkpool_collector/darkpool_collector.log
+sudo chown -R avxz:avxz /var/log/darkpool_collector
+
 # Set permissions
 sudo chown -R avxz:avxz /opt/darkpool_collector
-sudo chown -R avxz:avxz /var/lib/celery/beat
 
 # Reload systemd
 sudo systemctl daemon-reload

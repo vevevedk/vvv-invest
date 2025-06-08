@@ -237,3 +237,257 @@ For our options flow collector, we should:
 - Implement appropriate rate limiting between requests
 - Use pagination where available
 - Cache contract and expiry data to minimize API calls 
+
+## Flow Alerts Endpoint
+
+### 1. Flow Alerts
+`GET https://api.unusualwhales.com/api/option-trades/flow-alerts`
+
+Returns the latest flow alerts.
+
+**Request Headers:**
+- `Authorization: Bearer <YOUR_TOKEN>`
+- `Accept: application/json`
+
+**Query Parameters:**
+- `all_opening` (boolean): Whether all transactions are opening transactions based on OI, Size & Volume. Default: true
+- `is_ask_side` (boolean): Whether a transaction is ask side. Default: true
+- `is_bid_side` (boolean): Whether a transaction is bid side. Default: true
+- `is_call` (boolean): Whether a transaction is a call. Default: true
+- `is_floor` (boolean): Whether a transaction is from the floor. Default: true
+- `is_otm` (boolean): Only include contracts which are currently out of the money
+- `is_put` (boolean): Whether a transaction is a put. Default: true
+- `is_sweep` (boolean): Whether a transaction is an intermarket sweep. Default: true
+- `issue_types[]` (array[string]): Array of issue types. Allowed values: "Common Stock", "ETF", "Index", "ADR"
+- `limit` (integer): Number of items to return. Default: 100. Max: 200. Min: 1
+- `max_diff` (string): Maximum OTM diff of a contract
+- `max_dte` (integer): Maximum days to expiry. Min: 0
+- `max_open_interest` (integer): Maximum open interest on alert's contract. Min: 0
+- `max_premium` (integer): Maximum premium on alert. Min: 0
+- `max_size` (integer): Maximum size on alert. Min: 0
+- `max_volume` (integer): Maximum volume on alert's contract. Min: 0
+- `max_volume_oi_ratio` (integer): Maximum contract volume to open interest ratio. Min: 0
+- `min_diff` (string): Minimum OTM diff of a contract
+- `min_dte` (integer): Minimum days to expiry. Min: 0
+- `min_open_interest` (integer): Minimum open interest on alert's contract. Min: 0
+- `min_premium` (integer): Minimum premium on alert. Min: 0
+- `min_size` (integer): Minimum size on alert. Min: 0
+- `min_volume` (integer): Minimum volume on alert's contract. Min: 0
+- `min_volume_oi_ratio` (integer): Minimum contract volume to open interest ratio. Min: 0
+- `newer_than` (string): Unix time or ISO date for pagination
+- `older_than` (string): Unix time or ISO date for pagination
+- `rule_name[]` (array[string]): Array of rule names. Allowed values:
+  - "FloorTradeSmallCap"
+  - "FloorTradeMidCap"
+  - "RepeatedHits"
+  - "RepeatedHitsAscendingFill"
+  - "RepeatedHitsDescendingFill"
+  - "FloorTradeLargeCap"
+  - "OtmEarningsFloor"
+  - "LowHistoricVolumeFloor"
+  - "SweepsFollowedByFloor"
+- `ticker_symbol` (string): Comma-separated list of tickers. Prefix with - to exclude
+
+**Response Fields:**
+- `alert_rule` (string): Name of the alert rule
+- `all_opening_trades` (boolean): Whether all trades are opening trades
+- `created_at` (string): UTC timestamp
+- `expiry` (string): Contract expiry date in ISO format
+- `expiry_count` (integer): Number of expiries in multileg trade
+- `has_floor` (boolean): Whether trade has floor component
+- `has_multileg` (boolean): Whether trade is multileg
+- `has_singleleg` (boolean): Whether trade is singleleg
+- `has_sweep` (boolean): Whether trade is a sweep
+- `open_interest` (number): Open interest at time of alert
+- `option_chain` (string): Option symbol of contract
+- `price` (number): Trade price
+- `strike` (string): Contract strike price
+- `ticker` (string): Underlying ticker
+- `total_ask_side_prem` (number): Total premium on ask side
+- `total_bid_side_prem` (number): Total premium on bid side
+- `total_premium` (number): Total premium
+- `total_size` (number): Total size
+- `trade_count` (number): Number of trades
+- `type` (string): Contract type ("call" or "put")
+- `underlying_price` (number): Price of underlying at time of alert
+- `volume` (number): Volume at time of alert
+- `volume_oi_ratio` (number): Volume to open interest ratio
+
+**Example Response:**
+```json
+{
+  "data": [
+    {
+      "alert_rule": "RepeatedHits",
+      "all_opening_trades": false,
+      "created_at": "2023-12-12T16:35:52.168490Z",
+      "expiry": "2023-12-22",
+      "expiry_count": 1,
+      "has_floor": false,
+      "has_multileg": false,
+      "has_singleleg": true,
+      "has_sweep": true,
+      "open_interest": 1234,
+      "option_chain": "AAPL231222C00175000",
+      "price": 2.50,
+      "strike": "175",
+      "ticker": "AAPL",
+      "total_ask_side_prem": 25000,
+      "total_bid_side_prem": 0,
+      "total_premium": 25000,
+      "total_size": 100,
+      "trade_count": 1,
+      "type": "call",
+      "underlying_price": 178.50,
+      "volume": 500,
+      "volume_oi_ratio": 0.41
+    }
+  ]
+}
+``` 
+
+## Economic Calendar Endpoint
+
+### 1. Economic Calendar
+`GET https://api.unusualwhales.com/api/market/economic-calendar`
+
+Returns the economic calendar for the current and next week.
+
+**Request Headers:**
+- `Authorization: Bearer <YOUR_TOKEN>`
+- `Accept: application/json`
+
+**Response Fields:**
+- `event` (string): The event/reason. Can be a fed speaker or an economic report/indicator
+- `forecast` (string|null): The forecast if the event is an economic report/indicator
+- `prev` (string|null): The previous value of the preceding period if the event is an economic report/indicator
+- `reported_period` (string|null): The period for which the economic report/indicator is being reported
+- `time` (string): The time at which the event will start as UTC timestamp
+- `type` (string): The type of the event. Allowed values: "fed-speaker", "fomc", "report"
+
+**Example Response:**
+```json
+{
+  "data": [
+    {
+      "event": "Consumer sentiment (final)",
+      "forecast": "69.4",
+      "prev": "69.4",
+      "reported_period": "December",
+      "time": "2023-12-22T15:00:00Z",
+      "type": "report"
+    },
+    {
+      "event": "PCE index",
+      "forecast": null,
+      "prev": "0.0%",
+      "reported_period": "November",
+      "time": "2023-12-22T13:30:00Z",
+      "type": "report"
+    }
+  ]
+}
+```
+
+**Example curl request:**
+```bash
+curl --request GET \
+  --url 'https://api.unusualwhales.com/api/market/economic-calendar' \
+  --header 'Accept: application/json' \
+  --header 'Authorization: Bearer <YOUR_TOKEN>'
+``` 
+
+## Earnings Endpoints
+
+### 1. Afterhours Earnings
+`GET https://api.unusualwhales.com/api/earnings/afterhours`
+
+Returns the afterhours earnings for a given date.
+
+**Request Headers:**
+- `Authorization: Bearer <YOUR_TOKEN>`
+- `Accept: application/json`
+
+**Query Parameters:**
+- `date` (string, optional): Trading date in YYYY-MM-DD format. Defaults to last trading date. Example: 2024-01-18
+- `limit` (integer, optional): Number of items to return. Default: 50. Max: 100. Min: 1. Example: 10
+- `page` (integer, optional): Page number (use with limit). Starts on page 0. Example: 1
+
+**Response Fields:**
+- `actual_eps` (string)
+- `continent` (string)
+- `country_code` (string)
+- `country_name` (string)
+- `ending_fiscal_quarter` (string, ISO date)
+- `expected_move` (string)
+- `expected_move_perc` (string)
+- `full_name` (string)
+- `has_options` (boolean or null)
+- `is_s_p_500` (boolean)
+- `marketcap` (string)
+- `post_earnings_close` (string)
+- `post_earnings_date` (string, ISO date)
+- `pre_earnings_close` (string)
+- `pre_earnings_date` (string, ISO date)
+- `reaction` (string)
+- `report_date` (string, ISO date)
+- `report_time` (string): premarket, postmarket, or unknown
+- `sector` (string)
+- `source` (string): company or estimation
+- `street_mean_est` (string)
+- `symbol` (string)
+
+---
+
+### 2. Premarket Earnings
+`GET https://api.unusualwhales.com/api/earnings/premarket`
+
+Returns the premarket earnings for a given date.
+
+**Request Headers:**
+- `Authorization: Bearer <YOUR_TOKEN>`
+- `Accept: application/json`
+
+**Query Parameters:**
+- `date` (string, optional): Trading date in YYYY-MM-DD format. Defaults to last trading date. Example: 2024-01-18
+- `limit` (integer, optional): Number of items to return. Default: 50. Max: 100. Min: 1. Example: 10
+- `page` (integer, optional): Page number (use with limit). Starts on page 0. Example: 1
+
+**Response Fields:**
+- Same as Afterhours Earnings
+
+---
+
+### 3. Historical Ticker Earnings
+`GET https://api.unusualwhales.com/api/earnings/{ticker}`
+
+Returns the historical earnings for the given ticker.
+
+**Request Headers:**
+- `Authorization: Bearer <YOUR_TOKEN>`
+- `Accept: application/json`
+
+**Path Parameters:**
+- `ticker` (string, required): A single ticker. Example: AAPL
+
+**Response Fields:**
+- `actual_eps` (string)
+- `ending_fiscal_quarter` (string, ISO date)
+- `expected_move` (string)
+- `expected_move_perc` (string)
+- `long_straddle_1d` (string)
+- `long_straddle_1w` (string)
+- `post_earnings_move_1d` (string)
+- `post_earnings_move_1w` (string)
+- `post_earnings_move_2w` (string)
+- `post_earnings_move_3d` (string)
+- `pre_earnings_move_1d` (string)
+- `pre_earnings_move_1w` (string)
+- `pre_earnings_move_2w` (string)
+- `pre_earnings_move_3d` (string)
+- `report_date` (string, ISO date)
+- `report_time` (string): premarket, postmarket, or unknown
+- `short_straddle_1d` (string)
+- `short_straddle_1w` (string)
+- `source` (string): company or estimation
+- `street_mean_est` (string) 

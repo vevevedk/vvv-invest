@@ -19,20 +19,14 @@ db_params = {
     'sslmode': os.getenv('DB_SSLMODE', 'prefer')
 }
 
-# Connect to the database
-conn = psycopg2.connect(**db_params)
-cur = conn.cursor()
+# Connect to the database and close immediately using context managers
+with psycopg2.connect(**db_params) as conn:
+    with conn.cursor() as cur:
+        pass
 
-# Close the cursor and connection
-cur.close()
-conn.close()
-
-# Reconnect to the database
-conn = psycopg2.connect(**db_params)
-cur = conn.cursor()
-
-# Close the cursor and connection again
-cur.close()
-conn.close()
+# Reconnect to the database and close immediately using context managers
+with psycopg2.connect(**db_params) as conn:
+    with conn.cursor() as cur:
+        pass
 
 print("Database connection restarted successfully.") 
