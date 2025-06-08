@@ -232,38 +232,25 @@ def export_data():
 @app.route('/api/collection_counts')
 @login_required
 def collection_counts():
-    """Return hourly collection counts for each collector for the last 24 hours."""
     try:
         with psycopg2.connect(**DB_CONFIG) as conn:
             with conn.cursor() as cur:
-                result = {}
-                # News Collector
-                cur.execute('''
-                    SELECT date_trunc('hour', created_at) AS hour, COUNT(*)
-                    FROM trading.news_headlines
-                    WHERE created_at > NOW() - INTERVAL '24 hours'
-                    GROUP BY hour
-                    ORDER BY hour
-                ''')
-                news_counts = [
-                    {"interval": row[0].isoformat(), "count": row[1]} for row in cur.fetchall()
-                ]
-                result['news'] = news_counts
-                # Darkpool Collector
-                cur.execute('''
-                    SELECT date_trunc('hour', executed_at) AS hour, COUNT(*)
-                    FROM trading.darkpool_trades
-                    WHERE executed_at > NOW() - INTERVAL '24 hours'
-                    GROUP BY hour
-                    ORDER BY hour
-                ''')
-                dp_counts = [
-                    {"interval": row[0].isoformat(), "count": row[1]} for row in cur.fetchall()
-                ]
-                result['darkpool'] = dp_counts
-                return jsonify(result)
+                # Query to get hourly collection counts for the last 24 hours
+                query = """
+                SELECT 
+                    date_trunc('hour', created_at) as hour,
+                    COUNT(*) as count
+                FROM trading.news_headlines
+                WHERE created_at >= NOW() - INTERVAL '24 hours'
+                GROUP BY hour
+                ORDER BY hour DESC
+                """
+                cur.execute(query)
+                results = cur.fetchall()
+                return jsonify(results)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"Error in collection_counts: {e}")
+        return jsonify([])  # Return empty list on error
 
 # Temporary route-printing snippet
 print("Registered routes:", [rule.rule for rule in app.url_map.iter_rules()])
