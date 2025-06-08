@@ -4,7 +4,7 @@ Flask dashboard for monitoring collectors.
 
 import os
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from flow_analysis.monitoring.collector_monitor import CollectorMonitor
@@ -130,7 +130,13 @@ def data_freshness():
                 # Placeholder for expected items (could be dynamic)
                 news_expected = 100
                 news_completeness = int((news_count / news_expected) * 100) if news_expected else 0
-                news_status = 'up_to_date' if news_last and (datetime.utcnow() - news_last).total_seconds() < 3600 else 'stale'
+                news_status = 'up_to_date'
+                if news_last:
+                    delta = (datetime.now(timezone.utc) - news_last.astimezone(timezone.utc)).total_seconds()
+                    if delta >= 3600:
+                        news_status = 'stale'
+                else:
+                    news_status = 'stale'
                 result['news'] = {
                     'last_data_timestamp': news_last.isoformat() if news_last else None,
                     'items_collected': news_count,
@@ -145,7 +151,13 @@ def data_freshness():
                 dp_count = cur.fetchone()[0]
                 dp_expected = 50
                 dp_completeness = int((dp_count / dp_expected) * 100) if dp_expected else 0
-                dp_status = 'up_to_date' if dp_last and (datetime.utcnow() - dp_last).total_seconds() < 3600 else 'stale'
+                dp_status = 'up_to_date'
+                if dp_last:
+                    delta = (datetime.now(timezone.utc) - dp_last.astimezone(timezone.utc)).total_seconds()
+                    if delta >= 3600:
+                        dp_status = 'stale'
+                else:
+                    dp_status = 'stale'
                 result['darkpool'] = {
                     'last_data_timestamp': dp_last.isoformat() if dp_last else None,
                     'items_collected': dp_count,
