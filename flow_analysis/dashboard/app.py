@@ -6,10 +6,12 @@ import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from functools import wraps
-from flask import Flask, render_template, jsonify, request, session, redirect, url_for
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for, send_file
 from flow_analysis.monitoring.collector_monitor import CollectorMonitor
 from flow_analysis.config.env_config import DB_CONFIG
 import psycopg2
+import io
+import csv
 
 app = Flask(__name__)
 # Generate a secure secret key if not set
@@ -168,6 +170,64 @@ def data_freshness():
                 return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/export')
+@login_required
+def export_data():
+    """Export data for selected collectors and time range as CSV."""
+    collectors = request.args.get('collectors', 'news,darkpool').split(',')
+    start_time = request.args.get('start_time')
+    end_time = request.args.get('end_time')
+    output = io.StringIO()
+    writer = csv.writer(output)
+    with psycopg2.connect(**DB_CONFIG) as conn:
+        with conn.cursor() as cur:
+            for collector in collectors:
+                if collector == 'news':
+                    query = "SELECT * FROM trading.news_headlines"
+                    params = []
+                    if start_time and end_time:
+                        query += " WHERE created_at BETWEEN %s AND %s"
+                        params = [start_time, end_time]
+                    elif start_time:
+                        query += " WHERE created_at >= %s"
+                        params = [start_time]
+                    elif end_time:
+                        query += " WHERE created_at <= %s"
+                        params = [end_time]
+                    cur.execute(query, params)
+                    rows = cur.fetchall()
+                    colnames = [desc[0] for desc in cur.description]
+                    writer.writerow([f'news_headlines: {len(rows)} rows'])
+                    writer.writerow(colnames)
+                    writer.writerows(rows)
+                    writer.writerow([])
+                elif collector == 'darkpool':
+                    query = "SELECT * FROM trading.darkpool_trades"
+                    params = []
+                    if start_time and end_time:
+                        query += " WHERE executed_at BETWEEN %s AND %s"
+                        params = [start_time, end_time]
+                    elif start_time:
+                        query += " WHERE executed_at >= %s"
+                        params = [start_time]
+                    elif end_time:
+                        query += " WHERE executed_at <= %s"
+                        params = [end_time]
+                    cur.execute(query, params)
+                    rows = cur.fetchall()
+                    colnames = [desc[0] for desc in cur.description]
+                    writer.writerow([f'darkpool_trades: {len(rows)} rows'])
+                    writer.writerow(colnames)
+                    writer.writerows(rows)
+                    writer.writerow([])
+    output.seek(0)
+    return send_file(
+        io.BytesIO(output.getvalue().encode()),
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name='collector_export.csv'
+    )
 
 if __name__ == '__main__':
     # Only allow local connections in production
