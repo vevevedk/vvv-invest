@@ -115,6 +115,20 @@
             {% endfor %}
         </div>
 
+        <!-- Data Freshness & Completeness Section -->
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Data Freshness & Completeness</h5>
+                        <div id="dataFreshnessContainer">
+                            <!-- Data freshness will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="row mt-4">
             <div class="col-md-12">
                 <div class="card">
@@ -279,15 +293,46 @@
                 });
         }
 
+        // Fetch and update data freshness
+        function updateDataFreshness() {
+            fetch('/api/data_freshness')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('dataFreshnessContainer');
+                    let html = '<table class="table table-bordered table-sm"><thead><tr>' +
+                        '<th>Collector</th>' +
+                        '<th>Last Data Timestamp</th>' +
+                        '<th>Items Collected (Last Hour)</th>' +
+                        '<th>Expected Items</th>' +
+                        '<th>Completeness (%)</th>' +
+                        '<th>Status</th>' +
+                        '</tr></thead><tbody>';
+                    Object.entries(data).forEach(([collector, info]) => {
+                        html += `<tr>
+                            <td>${collector.charAt(0).toUpperCase() + collector.slice(1)}</td>
+                            <td>${info.last_data_timestamp ? new Date(info.last_data_timestamp).toLocaleString() : 'N/A'}</td>
+                            <td>${info.items_collected}</td>
+                            <td>${info.expected_items}</td>
+                            <td>${info.completeness}%</td>
+                            <td><span class="badge bg-${info.status === 'up_to_date' ? 'success' : 'danger'}">${info.status.replace('_', ' ')}</span></td>
+                        </tr>`;
+                    });
+                    html += '</tbody></table>';
+                    container.innerHTML = html;
+                });
+        }
+
         // Initial load
         updateStatus();
         updateHistory();
         updateLogs();
+        updateDataFreshness();
 
         // Set up periodic updates
         setInterval(updateStatus, 30000);  // Every 30 seconds
         setInterval(updateHistory, 300000);  // Every 5 minutes
         setInterval(updateLogs, 60000);  // Every minute
+        setInterval(updateDataFreshness, 30000);  // Every 30 seconds
     </script>
 </body>
 </html> 

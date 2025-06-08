@@ -81,6 +81,24 @@ This document tracks proposed and implemented improvements for the collector-das
 
 ---
 
+## 10. UI/UX: Data Completeness & Freshness (Top Priority)
+- **Data Freshness Indicator:**
+  - Show the timestamp of the most recent data item collected (not just the last log/heartbeat).
+  - Display a badge ("Up to Date"/"Stale") based on how recent the last data is.
+- **Completeness Metrics:**
+  - Show expected vs. actual items collected for each interval (e.g., hour/day).
+  - Display a completeness percentage (e.g., 93/100 = 93%).
+  - Highlight missing data or gaps with alerts or color coding.
+- **Visualizations:**
+  - Add a chart of items collected per interval.
+  - Add a timeline/status history for collector activity.
+- **Recent Data Preview:**
+  - Show a table of the most recent data items (e.g., headlines, trades).
+- **Custom Alerts:**
+  - Alert if data is stale or incomplete for a configurable period.
+
+---
+
 ## Next Steps
 - Prioritize which improvements to implement next.
 - Reference this document in planning and development discussions. 

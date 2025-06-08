@@ -114,6 +114,49 @@ def logs():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/data_freshness')
+@login_required
+def data_freshness():
+    """Return data freshness and completeness info for each collector."""
+    try:
+        with psycopg2.connect(**DB_CONFIG) as conn:
+            with conn.cursor() as cur:
+                result = {}
+                # News Collector
+                cur.execute("SELECT MAX(created_at) FROM trading.news_headlines;")
+                news_last = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM trading.news_headlines WHERE created_at > NOW() - INTERVAL '1 hour';")
+                news_count = cur.fetchone()[0]
+                # Placeholder for expected items (could be dynamic)
+                news_expected = 100
+                news_completeness = int((news_count / news_expected) * 100) if news_expected else 0
+                news_status = 'up_to_date' if news_last and (datetime.utcnow() - news_last).total_seconds() < 3600 else 'stale'
+                result['news'] = {
+                    'last_data_timestamp': news_last.isoformat() if news_last else None,
+                    'items_collected': news_count,
+                    'expected_items': news_expected,
+                    'completeness': news_completeness,
+                    'status': news_status
+                }
+                # Darkpool Collector
+                cur.execute("SELECT MAX(timestamp) FROM trading.darkpool_trades;")
+                dp_last = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM trading.darkpool_trades WHERE timestamp > NOW() - INTERVAL '1 hour';")
+                dp_count = cur.fetchone()[0]
+                dp_expected = 50
+                dp_completeness = int((dp_count / dp_expected) * 100) if dp_expected else 0
+                dp_status = 'up_to_date' if dp_last and (datetime.utcnow() - dp_last).total_seconds() < 3600 else 'stale'
+                result['darkpool'] = {
+                    'last_data_timestamp': dp_last.isoformat() if dp_last else None,
+                    'items_collected': dp_count,
+                    'expected_items': dp_expected,
+                    'completeness': dp_completeness,
+                    'status': dp_status
+                }
+                return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     # Only allow local connections in production
     app.run(host='127.0.0.1', port=5000, debug=False) 
