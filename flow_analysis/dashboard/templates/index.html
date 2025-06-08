@@ -129,6 +129,18 @@
             </div>
         </div>
 
+        <!-- Collection Counts Chart Section -->
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Hourly Collection Counts (Last 24h)</h5>
+                        <canvas id="collectionCountsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Export Data Section -->
         <div class="row mt-4">
             <div class="col-md-12">
@@ -357,6 +369,72 @@
                 });
         }
 
+        // Fetch and update collection counts chart
+        function updateCollectionCountsChart() {
+            fetch('/api/collection_counts')
+                .then(response => response.json())
+                .then(data => {
+                    const ctx = document.getElementById('collectionCountsChart').getContext('2d');
+                    // Get all unique hourly intervals
+                    const allIntervals = Array.from(new Set([
+                        ...data.news.map(d => d.interval),
+                        ...data.darkpool.map(d => d.interval)
+                    ])).sort();
+                    // Map counts to intervals (fill missing with 0)
+                    const newsCounts = allIntervals.map(interval => {
+                        const found = data.news.find(d => d.interval === interval);
+                        return found ? found.count : 0;
+                    });
+                    const darkpoolCounts = allIntervals.map(interval => {
+                        const found = data.darkpool.find(d => d.interval === interval);
+                        return found ? found.count : 0;
+                    });
+                    // Prepare chart data
+                    const chartData = {
+                        labels: allIntervals.map(i => new Date(i).toLocaleString()),
+                        datasets: [
+                            {
+                                label: 'News Collector',
+                                data: newsCounts,
+                                borderColor: '#007bff',
+                                backgroundColor: 'rgba(0,123,255,0.2)',
+                                fill: false,
+                                tension: 0.1
+                            },
+                            {
+                                label: 'Darkpool Collector',
+                                data: darkpoolCounts,
+                                borderColor: '#28a745',
+                                backgroundColor: 'rgba(40,167,69,0.2)',
+                                fill: false,
+                                tension: 0.1
+                            }
+                        ]
+                    };
+                    // Create or update chart
+                    if (window.collectionCountsChart) {
+                        window.collectionCountsChart.data = chartData;
+                        window.collectionCountsChart.update();
+                    } else {
+                        window.collectionCountsChart = new Chart(ctx, {
+                            type: 'line',
+                            data: chartData,
+                            options: {
+                                responsive: true,
+                                plugins: {
+                                    legend: { position: 'top' },
+                                    title: { display: false }
+                                },
+                                scales: {
+                                    x: { title: { display: true, text: 'Hour' } },
+                                    y: { title: { display: true, text: 'Items Collected' }, beginAtZero: true }
+                                }
+                            }
+                        });
+                    }
+                });
+        }
+
         // Export form handler
         document.getElementById('exportForm').addEventListener('submit', function(e) {
             e.preventDefault();
@@ -375,12 +453,14 @@
         updateHistory();
         updateLogs();
         updateDataFreshness();
+        updateCollectionCountsChart();
 
         // Set up periodic updates
         setInterval(updateStatus, 30000);  // Every 30 seconds
         setInterval(updateHistory, 300000);  // Every 5 minutes
         setInterval(updateLogs, 60000);  // Every minute
         setInterval(updateDataFreshness, 30000);  // Every 30 seconds
+        setInterval(updateCollectionCountsChart, 300000);  // Every 5 minutes
     </script>
 </body>
 </html> 
