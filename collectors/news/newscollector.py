@@ -313,16 +313,16 @@ class NewsCollector:
                         'sentiment': headline.get('sentiment'),
                         'meta': json.dumps(headline.get('meta', {}))
                     }
-                    
                     conn.execute(text("""
                         INSERT INTO trading.news_headlines (
                             headline, source, created_at, tags, tickers, is_major, sentiment, meta
                         ) VALUES (
                             :headline, :source, :created_at, :tags, :tickers, :is_major, :sentiment, :meta
                         )
+                        ON CONFLICT (headline, source, created_at) DO NOTHING
                     """), formatted_headline)
                 conn.commit()
-                logger.info(f"Saved {len(headlines)} headlines")
+                logger.info(f"Saved {len(headlines)} headlines (duplicates ignored)")
         except Exception as e:
             logger.error(f"Save error: {str(e)}")
             raise

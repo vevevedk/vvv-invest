@@ -229,6 +229,44 @@ def export_data():
         download_name='collector_export.csv'
     )
 
-if __name__ == '__main__':
-    # Only allow local connections in production
-    app.run(host='127.0.0.1', port=5000, debug=False) 
+@app.route('/api/collection_counts')
+@login_required
+def collection_counts():
+    """Return hourly collection counts for each collector for the last 24 hours."""
+    try:
+        with psycopg2.connect(**DB_CONFIG) as conn:
+            with conn.cursor() as cur:
+                result = {}
+                # News Collector
+                cur.execute('''
+                    SELECT date_trunc('hour', created_at) AS hour, COUNT(*)
+                    FROM trading.news_headlines
+                    WHERE created_at > NOW() - INTERVAL '24 hours'
+                    GROUP BY hour
+                    ORDER BY hour
+                ''')
+                news_counts = [
+                    {"interval": row[0].isoformat(), "count": row[1]} for row in cur.fetchall()
+                ]
+                result['news'] = news_counts
+                # Darkpool Collector
+                cur.execute('''
+                    SELECT date_trunc('hour', executed_at) AS hour, COUNT(*)
+                    FROM trading.darkpool_trades
+                    WHERE executed_at > NOW() - INTERVAL '24 hours'
+                    GROUP BY hour
+                    ORDER BY hour
+                ''')
+                dp_counts = [
+                    {"interval": row[0].isoformat(), "count": row[1]} for row in cur.fetchall()
+                ]
+                result['darkpool'] = dp_counts
+                return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Temporary route-printing snippet
+print("Registered routes:", [rule.rule for rule in app.url_map.iter_rules()])
+
+if __name__ == "__main__":
+    app.run(debug=True) 
