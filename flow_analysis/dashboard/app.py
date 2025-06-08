@@ -145,9 +145,9 @@ def data_freshness():
                     'status': news_status
                 }
                 # Darkpool Collector
-                cur.execute("SELECT MAX(timestamp) FROM trading.darkpool_trades;")
+                cur.execute("SELECT MAX(executed_at) FROM trading.darkpool_trades;")
                 dp_last = cur.fetchone()[0]
-                cur.execute("SELECT COUNT(*) FROM trading.darkpool_trades WHERE timestamp > NOW() - INTERVAL '1 hour';")
+                cur.execute("SELECT COUNT(*) FROM trading.darkpool_trades WHERE executed_at > NOW() - INTERVAL '1 hour';")
                 dp_count = cur.fetchone()[0]
                 dp_expected = 50
                 dp_completeness = int((dp_count / dp_expected) * 100) if dp_expected else 0
