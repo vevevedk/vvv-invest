@@ -129,6 +129,41 @@
             </div>
         </div>
 
+        <!-- Export Data Section -->
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Export Data</h5>
+                        <form id="exportForm" class="row g-3 align-items-end">
+                            <div class="col-auto">
+                                <label class="form-label mb-0">Collectors:</label><br>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" name="collectors" value="news" id="collectorNews" checked>
+                                    <label class="form-check-label" for="collectorNews">News</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" name="collectors" value="darkpool" id="collectorDarkpool" checked>
+                                    <label class="form-check-label" for="collectorDarkpool">Darkpool</label>
+                                </div>
+                            </div>
+                            <div class="col-auto">
+                                <label for="startTime" class="form-label mb-0">Start Time:</label>
+                                <input type="datetime-local" class="form-control" id="startTime" name="start_time">
+                            </div>
+                            <div class="col-auto">
+                                <label for="endTime" class="form-label mb-0">End Time:</label>
+                                <input type="datetime-local" class="form-control" id="endTime" name="end_time">
+                            </div>
+                            <div class="col-auto">
+                                <button type="submit" class="btn btn-primary">Export</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="row mt-4">
             <div class="col-md-12">
                 <div class="card">
@@ -321,6 +356,19 @@
                     container.innerHTML = html;
                 });
         }
+
+        // Export form handler
+        document.getElementById('exportForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const form = e.target;
+            const collectors = Array.from(form.querySelectorAll('input[name="collectors"]:checked')).map(cb => cb.value).join(',');
+            const startTime = form.start_time.value ? new Date(form.start_time.value).toISOString() : '';
+            const endTime = form.end_time.value ? new Date(form.end_time.value).toISOString() : '';
+            let url = `/api/export?collectors=${collectors}`;
+            if (startTime) url += `&start_time=${encodeURIComponent(startTime)}`;
+            if (endTime) url += `&end_time=${encodeURIComponent(endTime)}`;
+            window.open(url, '_blank');
+        });
 
         // Initial load
         updateStatus();
