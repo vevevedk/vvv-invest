@@ -332,6 +332,7 @@ class NewsCollector:
         self.start_time = datetime.now()
         try:
             headlines = self.fetch_data(start_date, end_date)
+            self.total_articles = len(headlines)
             self.save_headlines(headlines)
             log_collector_summary(
                 collector_name='news',
