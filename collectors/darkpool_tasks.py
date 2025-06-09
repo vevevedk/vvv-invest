@@ -51,7 +51,7 @@ def run_darkpool_collector(hours: int = 24):
             return {"status": "market_closed", "next_open": next_open.isoformat()}
         
         collector = DarkPoolCollector()
-        results = collector.collect_darkpool_trades(incremental=True)
+        results = collector.collect_trades()
         logger.info(f"Dark pool collector completed successfully. Results: {results}")
         return {"status": "success", "results": results}
     except Exception as e:
