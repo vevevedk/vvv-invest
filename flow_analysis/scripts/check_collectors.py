@@ -21,6 +21,9 @@ def main():
     
     if args.collector == 'all':
         health = monitor.get_collector_health()
+        # Ensure 'issues' key is present for output
+        if 'issues' not in health:
+            health['issues'] = []
     else:
         status = monitor.check_collector_status(args.collector)
         health = {

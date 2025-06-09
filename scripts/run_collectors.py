@@ -35,7 +35,7 @@ load_dotenv(env_file)
 print(f"ℹ️ Using environment file: {env_file}")
 
 # Now import the collectors after environment is set
-from collectors.darkpool.darkpool_collector import DarkPoolCollector
+from collectors.darkpool_collector import DarkPoolCollector
 from collectors.earnings.earnings_collector import EarningsCollector
 from collectors.economic.economic_collector import EconomicCollector
 from collectors.news.newscollector import NewsCollector

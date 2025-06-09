@@ -1,3 +1,14 @@
+# Collector Dashboard: Prioritized Implementation Order
+
+1. Dashboard Badges for "Last Seen"/Heartbeat (Quick win, visible impact)
+2. Status History Panel (Timeline of status changes for each collector)
+3. Log Viewer (Recent log messages per collector, filterable by type/severity)
+4. Manual Controls (Backfill/Restart) (Buttons to trigger backfill or restart for each collector, with permission checks)
+5. Completeness & Freshness Metrics (Show expected vs. actual items, completeness %, and freshness badges)
+6. Automated Alerts (Slack/Email) (Alert if collector is stalled, no heartbeat, or unhealthy)
+
+---
+
 # Collector Dashboard: Improvements & Roadmap
 
 This document tracks proposed and implemented improvements for the collector-dashboard system, focusing on reliability, observability, and maintainability.

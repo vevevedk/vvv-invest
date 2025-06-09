@@ -12,7 +12,7 @@ import argparse
 # Add project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from collectors.darkpool.darkpool_collector import DarkPoolCollector
+from collectors.darkpool_collector import DarkPoolCollector
 from collectors.news.newscollector import NewsCollector
 from config.db_config import get_db_config
 from flow_analysis.config.watchlist import SYMBOLS

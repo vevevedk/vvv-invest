@@ -11,7 +11,7 @@ import pytz
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from collectors.darkpool.darkpool_collector import DarkPoolCollector
+from collectors.darkpool_collector import DarkPoolCollector
 
 def main():
     """Run dark pool backfill for specified symbols and time range."""
