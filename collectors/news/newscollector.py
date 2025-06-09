@@ -17,6 +17,7 @@ from datetime import timezone
 from celery import shared_task
 import hashlib
 import pickle
+import logging
 
 from collectors.schema_validation import NewsSchemaValidator
 from config.db_config import get_db_config
@@ -43,13 +44,16 @@ MARKET_CLOSED_COLLECTION_INTERVAL = 15  # minutes
 def get_db_connection():
     """Get database connection using configuration."""
     db_config = get_db_config()
-    return create_engine(
+    logger = logging.getLogger('news_collector')
+    logger.info('Opening new SQLAlchemy engine connection')
+    engine = create_engine(
         f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['dbname']}?sslmode={db_config['sslmode']}",
         pool_size=5,
         max_overflow=10,
         pool_timeout=30,
         pool_recycle=1800,
     )
+    return engine
 
 class NewsCollector:
     """Collector for news articles with pagination and date range support."""
@@ -154,6 +158,7 @@ class NewsCollector:
     def _create_schema_if_not_exists(self):
         """Create the news headlines schema and table if they don't exist."""
         try:
+            logger.info('Opening DB connection')
             with self.engine.connect() as conn:
                 conn.execute(text("CREATE SCHEMA IF NOT EXISTS trading;"))
                 conn.execute(text("""
@@ -175,6 +180,8 @@ class NewsCollector:
         except Exception as e:
             logger.error(f"Schema error: {str(e)}")
             raise
+        finally:
+            logger.info('Closed DB connection')
 
     def _check_api_limit(self) -> bool:
         """Check if we're approaching the API limit."""
@@ -301,6 +308,7 @@ class NewsCollector:
             return
 
         try:
+            logger.info('Opening DB connection')
             with self.engine.connect() as conn:
                 for headline in headlines:
                     formatted_headline = {
@@ -326,6 +334,8 @@ class NewsCollector:
         except Exception as e:
             logger.error(f"Save error: {str(e)}")
             raise
+        finally:
+            logger.info('Closed DB connection')
 
     def collect(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> None:
         log_heartbeat('news', status='running')
@@ -346,6 +356,9 @@ class NewsCollector:
         except Exception as e:
             log_error('news', e, task_type='collect')
             raise
+        finally:
+            logger.info('Disposing SQLAlchemy engine')
+            self.engine.dispose()
 
     def get_all_headlines(self) -> pd.DataFrame:
         """Get all headlines from the database."""
@@ -395,6 +408,9 @@ class NewsCollector:
         except Exception as e:
             log_error('news', e, task_type='backfill')
             raise
+        finally:
+            logger.info('Disposing SQLAlchemy engine')
+            self.engine.dispose()
 
 @shared_task
 def run_news_collector(minutes: int = 10) -> Dict[str, Any]:
