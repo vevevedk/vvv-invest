@@ -86,7 +86,13 @@
                     <div class="card-body">
                         <h5 class="card-title">
                             {{ collector_type.title() }} Collector
-                            <span class="heartbeat-indicator {% if status.status in ['running', 'delayed', 'waiting_for_market_open'] %}heartbeat-active{% else %}heartbeat-stale{% endif %}"></span>
+                            <span class="heartbeat-indicator {% if status.status in ['running', 'delayed', 'waiting_for_market_open'] %}heartbeat-active{% else %}heartbeat-stale{% endif %}" 
+                                  title="Status: {{ status.status }}&#10;Last seen: {{ status.last_update }}"></span>
+                            <span class="last-seen-badge badge"
+                                  style="vertical-align: middle; margin-left: 5px;"
+                                  data-last-update="{{ status.last_update }}">
+                                <!-- Will be filled by JS -->
+                            </span>
                         </h5>
                         <p class="card-text">
                             Status: 
@@ -98,10 +104,10 @@
                             </span>
                         </p>
                         <p class="card-text">
-                            Last Update: {{ status.last_update }}
+                            Last Update: <span class="last-update">{{ status.last_update }}</span>
                         </p>
                         <p class="card-text">
-                            <small class="text-muted">{{ status.message }}</small>
+                            <small class="text-muted status-message">{{ status.message }}</small>
                         </p>
                         {% if status.error_details %}
                         <div class="error-details">
@@ -213,6 +219,30 @@
             'unknown': '#f8f9fa'
         };
 
+        // Helper to format "Last Seen" badge
+        function formatLastSeenBadge(lastUpdate) {
+            if (!lastUpdate) return {text: 'Never', color: 'bg-secondary'};
+            const now = new Date();
+            const last = new Date(lastUpdate);
+            const diffSec = Math.floor((now - last) / 1000);
+            let text = '';
+            let color = '';
+            if (diffSec < 60) {
+                text = 'Just now';
+                color = 'bg-success';
+            } else if (diffSec < 300) {
+                text = Math.floor(diffSec / 60) + 'm ago';
+                color = 'bg-success';
+            } else if (diffSec < 1800) {
+                text = Math.floor(diffSec / 60) + 'm ago';
+                color = 'bg-warning';
+            } else {
+                text = Math.floor(diffSec / 60) + 'm ago';
+                color = 'bg-danger';
+            }
+            return {text, color};
+        }
+
         // Fetch and update status every 30 seconds
         function updateStatus() {
             fetch('/api/status')
@@ -227,13 +257,21 @@
                             card.querySelector('.last-update').textContent = status.last_update;
                             card.querySelector('.status-message').textContent = status.message;
                             
-                            // Update heartbeat indicator
+                            // Update heartbeat indicator and tooltip
                             const indicator = card.querySelector('.heartbeat-indicator');
                             indicator.className = `heartbeat-indicator ${
                                 status.status in ['running', 'delayed', 'waiting_for_market_open'] 
                                 ? 'heartbeat-active' 
                                 : 'heartbeat-stale'
                             }`;
+                            indicator.title = `Status: ${status.status}\nLast seen: ${status.last_update}`;
+
+                            // Update Last Seen badge
+                            const lastSeenBadge = card.querySelector('.last-seen-badge');
+                            const badgeInfo = formatLastSeenBadge(status.last_update);
+                            lastSeenBadge.textContent = badgeInfo.text;
+                            lastSeenBadge.className = `last-seen-badge badge ${badgeInfo.color}`;
+                            lastSeenBadge.setAttribute('data-last-update', status.last_update);
                             
                             // Update error details if present
                             const errorDiv = card.querySelector('.error-details');
