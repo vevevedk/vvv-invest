@@ -147,6 +147,13 @@ class DarkPoolCollector:
             self.logger.error(f"Error connecting to database: {str(e)}")
             raise
 
+    def close_db(self):
+        """Close the database connection."""
+        if self.db_conn and not self.db_conn.closed:
+            self.db_conn.close()
+            self.logger.info("Closed database connection")
+        self.db_conn = None
+
     def _rate_limit(self) -> None:
         """Enforce rate limiting between API requests."""
         current_time = time_module.time()
@@ -435,6 +442,8 @@ class DarkPoolCollector:
             self.logger.error(f"Error type: {type(e).__name__}")
             self.logger.error(f"Error details: {str(e)}")
             raise
+        finally:
+            self.close_db()
 
     def is_market_open(self) -> bool:
         """Check if the market is currently open."""
@@ -521,11 +530,13 @@ class DarkPoolCollector:
         except Exception as e:
             self.logger.error(f"Error in collector run loop: {str(e)}")
             raise
+        finally:
+            self.close_db()
 
     def __del__(self):
         """Clean up resources on deletion."""
-        if hasattr(self, 'db_conn') and self.db_conn is not None and not self.db_conn.closed:
-            self.db_conn.close()
+        self.close_db()
+        self.logger.info("DarkPoolCollector object deleted and DB connection closed")
 
 def main():
     """Main entry point."""
