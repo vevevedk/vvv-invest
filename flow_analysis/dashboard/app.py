@@ -12,6 +12,7 @@ from flow_analysis.config.env_config import DB_CONFIG
 import psycopg2
 import io
 import csv
+import subprocess
 
 app = Flask(__name__)
 # Generate a secure secret key if not set
@@ -267,6 +268,84 @@ def collection_counts():
     except Exception as e:
         print(f"Error in collection_counts: {e}")
         return jsonify([])  # Return empty list on error
+
+@app.route('/api/backfill', methods=['POST'])
+@login_required
+def trigger_backfill():
+    """Trigger a backfill for a specific collector."""
+    try:
+        collector = request.json.get('collector')
+        hours = request.json.get('hours', 24)
+        
+        if not collector:
+            return jsonify({'error': 'Collector name is required'}), 400
+            
+        if collector not in ['news', 'darkpool']:
+            return jsonify({'error': 'Invalid collector name'}), 400
+            
+        # Log the backfill request
+        with psycopg2.connect(**DB_CONFIG) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO trading.collector_logs 
+                    (collector_name, level, message, task_type, status)
+                    VALUES (%s, 'INFO', %s, 'manual_backfill', 'started')
+                """, (collector, f'Manual backfill triggered for last {hours} hours'))
+        
+        # Trigger the backfill process
+        if collector == 'news':
+            subprocess.Popen([
+                '/opt/darkpool_collector/venv/bin/python',
+                '-m', 'collectors.news.newscollector',
+                '--backfill',
+                '--hours', str(hours)
+            ], env=dict(os.environ, PYTHONPATH='/opt/darkpool_collector'))
+        else:  # darkpool
+            subprocess.Popen([
+                '/opt/darkpool_collector/venv/bin/python',
+                '-m', 'collectors.darkpool.darkpool_collector_backfill',
+                '--hours', str(hours)
+            ], env=dict(os.environ, PYTHONPATH='/opt/darkpool_collector'))
+            
+        return jsonify({'message': f'Backfill triggered for {collector}'})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/restart', methods=['POST'])
+@login_required
+def restart_collector():
+    """Restart a specific collector service."""
+    try:
+        collector = request.json.get('collector')
+        
+        if not collector:
+            return jsonify({'error': 'Collector name is required'}), 400
+            
+        if collector not in ['news', 'darkpool']:
+            return jsonify({'error': 'Invalid collector name'}), 400
+            
+        # Log the restart request
+        with psycopg2.connect(**DB_CONFIG) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO trading.collector_logs 
+                    (collector_name, level, message, task_type, status)
+                    VALUES (%s, 'INFO', 'Manual restart triggered', 'restart', 'started')
+                """, (collector,))
+        
+        # Restart the appropriate service
+        if collector == 'news':
+            subprocess.run(['sudo', 'systemctl', 'restart', 'news-collector-worker.service'])
+            subprocess.run(['sudo', 'systemctl', 'restart', 'news-collector-beat.service'])
+        else:  # darkpool
+            subprocess.run(['sudo', 'systemctl', 'restart', 'darkpool-collector-worker.service'])
+            subprocess.run(['sudo', 'systemctl', 'restart', 'darkpool-collector-beat.service'])
+            
+        return jsonify({'message': f'Restart triggered for {collector}'})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Temporary route-printing snippet
 print("Registered routes:", [rule.rule for rule in app.url_map.iter_rules()])
