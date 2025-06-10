@@ -336,11 +336,11 @@ def restart_collector():
         
         # Restart the appropriate service
         if collector == 'news':
-            subprocess.run(['sudo', 'systemctl', 'restart', 'news-collector-worker.service'])
-            subprocess.run(['sudo', 'systemctl', 'restart', 'news-collector-beat.service'])
+            subprocess.run(['systemctl', 'restart', 'news-collector-worker.service'])
+            subprocess.run(['systemctl', 'restart', 'news-collector-beat.service'])
         else:  # darkpool
-            subprocess.run(['sudo', 'systemctl', 'restart', 'darkpool-collector-worker.service'])
-            subprocess.run(['sudo', 'systemctl', 'restart', 'darkpool-collector-beat.service'])
+            subprocess.run(['systemctl', 'restart', 'darkpool-collector-worker.service'])
+            subprocess.run(['systemctl', 'restart', 'darkpool-collector-beat.service'])
             
         return jsonify({'message': f'Restart triggered for {collector}'})
         
