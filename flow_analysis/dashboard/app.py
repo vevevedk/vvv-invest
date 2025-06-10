@@ -79,11 +79,17 @@ def history():
 @app.route('/api/logs')
 @login_required
 def logs():
-    """Get recent logs for all collectors."""
+    """Get recent logs for all collectors with filtering options."""
     try:
+        # Get filter parameters
+        collector = request.args.get('collector')
+        level = request.args.get('level')
+        hours = request.args.get('hours', default=1, type=int)
+        
         with psycopg2.connect(**DB_CONFIG) as conn:
             with conn.cursor() as cur:
-                cur.execute("""
+                # Build query with filters
+                query = """
                     SELECT 
                         timestamp,
                         collector_name,
@@ -95,10 +101,20 @@ def logs():
                         status,
                         error_details
                     FROM trading.collector_logs
-                    WHERE timestamp > NOW() - INTERVAL '1 hour'
-                    ORDER BY timestamp DESC
-                    LIMIT 100
-                """)
+                    WHERE timestamp > NOW() - INTERVAL '%s hours'
+                """
+                params = [hours]
+                
+                if collector:
+                    query += " AND collector_name = %s"
+                    params.append(collector)
+                if level:
+                    query += " AND level = %s"
+                    params.append(level)
+                
+                query += " ORDER BY timestamp DESC LIMIT 100"
+                
+                cur.execute(query, params)
                 logs = cur.fetchall()
                 
                 # Convert to list of dicts

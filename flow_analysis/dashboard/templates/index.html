@@ -17,13 +17,37 @@
         .status-unknown { background-color: #f8f9fa; }
         
         .log-entry {
-            padding: 8px;
-            margin-bottom: 4px;
+            padding: 12px;
+            margin-bottom: 8px;
             border-radius: 4px;
+            border: 1px solid rgba(0,0,0,0.1);
+            background-color: #fff;
         }
-        .log-error { background-color: #f8d7da; }
-        .log-warning { background-color: #fff3cd; }
-        .log-info { background-color: #d1ecf1; }
+        .log-error { 
+            border-left: 4px solid #dc3545;
+            background-color: #fff8f8;
+        }
+        .log-warning { 
+            border-left: 4px solid #ffc107;
+            background-color: #fffdf8;
+        }
+        .log-info { 
+            border-left: 4px solid #17a2b8;
+            background-color: #f8fcfd;
+        }
+        
+        .log-entry pre {
+            background-color: #f8f9fa;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            margin-top: 4px;
+        }
+        
+        .log-entry .badge {
+            font-size: 0.8em;
+            padding: 0.3em 0.6em;
+        }
         
         .heartbeat-indicator {
             width: 10px;
@@ -223,7 +247,40 @@
                 <div class="card">
                     <div class="card-body">
                         <h5 class="card-title">Recent Logs</h5>
-                        <div id="logContainer">
+                        <div class="mb-3">
+                            <div class="row g-3 align-items-end">
+                                <div class="col-auto">
+                                    <label for="logCollector" class="form-label mb-0">Collector:</label>
+                                    <select id="logCollector" class="form-select form-select-sm">
+                                        <option value="">All Collectors</option>
+                                        <option value="darkpool">Darkpool</option>
+                                        <option value="news">News</option>
+                                    </select>
+                                </div>
+                                <div class="col-auto">
+                                    <label for="logLevel" class="form-label mb-0">Level:</label>
+                                    <select id="logLevel" class="form-select form-select-sm">
+                                        <option value="">All Levels</option>
+                                        <option value="ERROR">Error</option>
+                                        <option value="WARNING">Warning</option>
+                                        <option value="INFO">Info</option>
+                                    </select>
+                                </div>
+                                <div class="col-auto">
+                                    <label for="logHours" class="form-label mb-0">Time Range:</label>
+                                    <select id="logHours" class="form-select form-select-sm">
+                                        <option value="1">Last Hour</option>
+                                        <option value="6">Last 6 Hours</option>
+                                        <option value="12">Last 12 Hours</option>
+                                        <option value="24">Last 24 Hours</option>
+                                    </select>
+                                </div>
+                                <div class="col-auto">
+                                    <button id="refreshLogs" class="btn btn-primary btn-sm">Refresh</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="logContainer" style="max-height: 500px; overflow-y: auto;">
                             <!-- Logs will be populated here -->
                         </div>
                     </div>
@@ -428,24 +485,56 @@
             document.getElementById('historyRange').addEventListener('change', updateHistory);
         }
 
-        // Fetch and update logs
+        // Fetch and update logs with filters
         function updateLogs() {
-            fetch('/api/logs')
+            const collector = document.getElementById('logCollector').value;
+            const level = document.getElementById('logLevel').value;
+            const hours = document.getElementById('logHours').value;
+            
+            let url = `/api/logs?hours=${hours}`;
+            if (collector) url += `&collector=${collector}`;
+            if (level) url += `&level=${level}`;
+            
+            fetch(url)
                 .then(response => response.json())
                 .then(data => {
                     const container = document.getElementById('logContainer');
                     container.innerHTML = data.map(log => `
                         <div class="log-entry log-${log.level.toLowerCase()}">
-                            <strong>${new Date(log.timestamp).toLocaleString()}</strong>
-                            <span class="badge bg-${log.level === 'ERROR' ? 'danger' : 
-                                                   log.level === 'WARNING' ? 'warning' : 
-                                                   'info'}">${log.level}</span>
-                            <span>${log.message}</span>
-                            ${log.details ? `<pre>${JSON.stringify(log.details, null, 2)}</pre>` : ''}
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <strong>${new Date(log.timestamp).toLocaleString()}</strong>
+                                    <span class="badge bg-${log.level === 'ERROR' ? 'danger' : 
+                                                       log.level === 'WARNING' ? 'warning' : 
+                                                       'info'} ms-2">${log.level}</span>
+                                    <span class="badge bg-secondary ms-2">${log.collector}</span>
+                                    ${log.task_type ? `<span class="badge bg-info ms-2">${log.task_type}</span>` : ''}
+                                </div>
+                                ${log.is_heartbeat ? '<span class="badge bg-success">Heartbeat</span>' : ''}
+                            </div>
+                            <div class="mt-1">${log.message}</div>
+                            ${log.details ? `
+                                <div class="mt-1">
+                                    <small class="text-muted">Details:</small>
+                                    <pre class="mb-0">${JSON.stringify(log.details, null, 2)}</pre>
+                                </div>
+                            ` : ''}
+                            ${log.error_details ? `
+                                <div class="mt-1">
+                                    <small class="text-muted">Error Details:</small>
+                                    <pre class="mb-0">${JSON.stringify(log.error_details, null, 2)}</pre>
+                                </div>
+                            ` : ''}
                         </div>
                     `).join('');
                 });
         }
+
+        // Add event listeners for log filters
+        document.getElementById('logCollector').addEventListener('change', updateLogs);
+        document.getElementById('logLevel').addEventListener('change', updateLogs);
+        document.getElementById('logHours').addEventListener('change', updateLogs);
+        document.getElementById('refreshLogs').addEventListener('click', updateLogs);
 
         // Fetch and update data freshness
         function updateDataFreshness() {
