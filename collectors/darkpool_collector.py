@@ -177,27 +177,39 @@ class DarkPoolCollector:
                     logger.error(f"Error saving trade {trade['tracking_id']}: {str(e)}")
             conn.commit()
     
+    def _get_latest_executed_at(self, symbol):
+        """Get the latest executed_at timestamp for a symbol from the database."""
+        query = """
+        SELECT MAX(executed_at) FROM trading.darkpool_trades WHERE symbol = :symbol
+        """
+        with self.engine.connect() as conn:
+            result = conn.execute(text(query), {"symbol": symbol}).scalar()
+            return result
+
     def collect_trades(self):
-        """Collect recent dark pool trades."""
+        """Collect recent dark pool trades, always fetching from the latest executed_at in the DB up to now."""
         end_time = datetime.now(pytz.UTC)
-        start_time = end_time - timedelta(minutes=self.lookback_minutes)
         log_heartbeat('darkpool', status='running')
-        logger.info(f"Collecting trades from {start_time} to {end_time}")
+        logger.info(f"Collecting trades up to {end_time}")
         total_trades = 0
         start = datetime.utcnow()
         for symbol in self.symbols:
             try:
-                # Check existing data
-                existing_ranges = self._get_existing_data_ranges(symbol)
-                if self._is_time_range_covered(start_time, end_time, existing_ranges):
-                    logger.info(f"Skipping {symbol} - data already exists for this period")
-                    continue
-                # Fetch and save trades
+                latest_executed_at = self._get_latest_executed_at(symbol)
+                if latest_executed_at is not None:
+                    # Add 1 second to avoid overlap
+                    start_time = latest_executed_at + timedelta(seconds=1)
+                else:
+                    # If no data, fetch for the last N minutes
+                    start_time = end_time - timedelta(minutes=self.lookback_minutes)
+                logger.info(f"Collecting trades for {symbol} from {start_time} to {end_time}")
                 trades = self._fetch_trades(symbol, start_time, end_time)
                 if trades:
                     self._save_trades(trades)
                     total_trades += len(trades)
                     logger.info(f"Saved {len(trades)} trades for {symbol}")
+                else:
+                    logger.info(f"No new trades found for {symbol}")
             except Exception as e:
                 logger.error(f"Error collecting trades for {symbol}: {str(e)}")
                 log_error('darkpool', e, task_type='collect_trades', details={'symbol': symbol})
@@ -250,11 +262,15 @@ def main():
     parser = argparse.ArgumentParser(description='Dark Pool Trade Collector')
     parser.add_argument('--api-key', help='API key for authentication')
     parser.add_argument('--db-url', help='Database URL')
+    parser.add_argument('--backfill', action='store_true', help='Run in backfill mode')
+    parser.add_argument('--hours', type=int, default=24, help='Number of hours to look back (default: 24)')
     args = parser.parse_args()
     
     collector = DarkPoolCollector(args.api_key, args.db_url)
-    collector.collect_trades()
-    collector.backfill_trades()
+    if args.backfill:
+        collector.backfill_trades(hours=args.hours)
+    else:
+        collector.collect_trades()
 
 if __name__ == "__main__":
     main() 
