@@ -351,7 +351,7 @@ class NewsCollector:
                 items_collected=self.total_articles,
                 api_credits_used=self.total_credits_used,
                 task_type='collect',
-                status='completed'
+                status='collected'
             )
         except Exception as e:
             log_error('news', e, task_type='collect')
@@ -403,7 +403,7 @@ class NewsCollector:
                 items_collected=self.total_articles,
                 api_credits_used=self.total_credits_used,
                 task_type='backfill',
-                status='completed'
+                status='collected'
             )
         except Exception as e:
             log_error('news', e, task_type='backfill')

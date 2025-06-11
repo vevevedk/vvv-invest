@@ -220,7 +220,7 @@ class DarkPoolCollector:
             end_time=end,
             items_collected=total_trades,
             task_type='collect_trades',
-            status='completed'
+            status='collected'
         )
         return total_trades
     

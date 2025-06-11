@@ -252,22 +252,26 @@ def collection_counts():
     try:
         with psycopg2.connect(**DB_CONFIG) as conn:
             with conn.cursor() as cur:
-                # Query to get hourly collection counts for the last 24 hours
                 query = """
-                SELECT 
-                    date_trunc('hour', created_at) as hour,
+                SELECT
+                    collector_name,
+                    date_trunc('hour', timestamp) as hour,
                     COUNT(*) as count
-                FROM trading.news_headlines
-                WHERE created_at >= NOW() - INTERVAL '24 hours'
-                GROUP BY hour
+                FROM trading.collector_logs
+                WHERE status = 'collected'
+                  AND timestamp >= NOW() - INTERVAL '24 hours'
+                GROUP BY collector_name, hour
                 ORDER BY hour DESC
                 """
                 cur.execute(query)
                 results = cur.fetchall()
-                return jsonify(results)
+                return jsonify([
+                    {'collector': row[0], 'hour': row[1].isoformat(), 'count': row[2]}
+                    for row in results
+                ])
     except Exception as e:
         print(f"Error in collection_counts: {e}")
-        return jsonify([])  # Return empty list on error
+        return jsonify([])
 
 @app.route('/api/backfill', methods=['POST'])
 @login_required
