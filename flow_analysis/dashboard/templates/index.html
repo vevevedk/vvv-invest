@@ -91,6 +91,44 @@
         .backfill-modal .form-group {
             margin-bottom: 15px;
         }
+        
+        .data-freshness-card {
+            margin-bottom: 15px;
+            border-left: 4px solid transparent;
+        }
+        .data-freshness-card.fresh {
+            border-left-color: #28a745;
+        }
+        .data-freshness-card.stale {
+            border-left-color: #dc3545;
+        }
+        .data-freshness-card.warning {
+            border-left-color: #ffc107;
+        }
+        
+        .completeness-bar {
+            height: 8px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 5px;
+        }
+        .completeness-bar-fill {
+            height: 100%;
+            background-color: #28a745;
+            transition: width 0.3s ease;
+        }
+        .completeness-bar-fill.warning {
+            background-color: #ffc107;
+        }
+        .completeness-bar-fill.danger {
+            background-color: #dc3545;
+        }
+        
+        .timestamp-tooltip {
+            cursor: help;
+            border-bottom: 1px dotted #6c757d;
+        }
     </style>
 </head>
 <body>
@@ -172,8 +210,54 @@
             <div class="col-md-12">
                 <div class="card">
                     <div class="card-body">
-                        <h5 class="card-title">Hourly Collection Counts (Last 24h)</h5>
-                        <canvas id="collectionCountsChart"></canvas>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="card-title mb-0">Hourly Collection Counts (Last 24h)</h5>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-secondary active" data-chart-view="hourly">Hourly</button>
+                                <button type="button" class="btn btn-outline-secondary" data-chart-view="daily">Daily</button>
+                            </div>
+                        </div>
+                        <div class="chart-container" style="position: relative; height: 300px;">
+                            <canvas id="collectionCountsChart"></canvas>
+                        </div>
+                        <div class="mt-3">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card bg-light">
+                                        <div class="card-body py-2">
+                                            <small class="text-muted">Total Items Collected (24h)</small>
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    <span class="badge bg-primary me-2">News</span>
+                                                    <span id="totalNewsCount">-</span>
+                                                </div>
+                                                <div>
+                                                    <span class="badge bg-success me-2">Darkpool</span>
+                                                    <span id="totalDarkpoolCount">-</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card bg-light">
+                                        <div class="card-body py-2">
+                                            <small class="text-muted">Average Items per Hour</small>
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    <span class="badge bg-primary me-2">News</span>
+                                                    <span id="avgNewsCount">-</span>
+                                                </div>
+                                                <div>
+                                                    <span class="badge bg-success me-2">Darkpool</span>
+                                                    <span id="avgDarkpoolCount">-</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -575,71 +659,123 @@
                 .then(response => response.json())
                 .then(data => {
                     const container = document.getElementById('dataFreshnessContainer');
-                    let html = '<table class="table table-bordered table-sm"><thead><tr>' +
-                        '<th>Collector</th>' +
-                        '<th>Last Data Timestamp</th>' +
-                        '<th>Items Collected (Last Hour)</th>' +
-                        '<th>Expected Items</th>' +
-                        '<th>Completeness (%)</th>' +
-                        '<th>Status</th>' +
-                        '</tr></thead><tbody>';
+                    let html = '';
+                    
                     Object.entries(data).forEach(([collector, info]) => {
-                        html += `<tr>
-                            <td>${collector.charAt(0).toUpperCase() + collector.slice(1)}</td>
-                            <td>${info.last_data_timestamp ? new Date(info.last_data_timestamp).toLocaleString() : 'N/A'}</td>
-                            <td>${info.items_collected}</td>
-                            <td>${info.expected_items}</td>
-                            <td>${info.completeness}%</td>
-                            <td><span class="badge bg-${info.status === 'up_to_date' ? 'success' : 'danger'}">${info.status.replace('_', ' ')}</span></td>
-                        </tr>`;
+                        const freshnessClass = info.status === 'up_to_date' ? 'fresh' : 
+                                             info.status === 'stale' ? 'stale' : 'warning';
+                        const completenessClass = info.completeness >= 90 ? '' : 
+                                                info.completeness >= 70 ? 'warning' : 'danger';
+                        
+                        html += `
+                            <div class="card data-freshness-card ${freshnessClass} mb-3">
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-3">
+                                            <h6 class="mb-2">${collector.charAt(0).toUpperCase() + collector.slice(1)} Collector</h6>
+                                            <span class="badge bg-${info.status === 'up_to_date' ? 'success' : 'danger'}">
+                                                ${info.status.replace('_', ' ')}
+                                            </span>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <small class="text-muted d-block">Last Data Timestamp</small>
+                                            <span class="timestamp-tooltip" title="Europe/Copenhagen (CEST) timezone">
+                                                ${info.last_data_timestamp ? new Date(info.last_data_timestamp).toLocaleString() : 'N/A'}
+                                            </span>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <small class="text-muted d-block">Items Collected (Last Hour)</small>
+                                            <strong>${info.items_collected}</strong> / ${info.expected_items}
+                                        </div>
+                                        <div class="col-md-3">
+                                            <small class="text-muted d-block">Completeness</small>
+                                            <div class="d-flex align-items-center">
+                                                <div class="flex-grow-1">
+                                                    <div class="completeness-bar">
+                                                        <div class="completeness-bar-fill ${completenessClass}" 
+                                                             style="width: ${info.completeness}%"></div>
+                                                    </div>
+                                                </div>
+                                                <span class="ms-2">${info.completeness}%</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>`;
                     });
-                    html += '</tbody></table>';
+                    
                     container.innerHTML = html;
                 });
         }
 
         // Fetch and update collection counts chart
-        function updateCollectionCountsChart() {
+        function updateCollectionCountsChart(view) {
             fetch('/api/collection_counts')
                 .then(response => response.json())
                 .then(data => {
                     const ctx = document.getElementById('collectionCountsChart').getContext('2d');
-                    // Get all unique hourly intervals
-                    const allIntervals = Array.from(new Set([
-                        ...data.news.map(d => d.interval),
-                        ...data.darkpool.map(d => d.interval)
-                    ])).sort();
-                    // Map counts to intervals (fill missing with 0)
-                    const newsCounts = allIntervals.map(interval => {
-                        const found = data.news.find(d => d.interval === interval);
-                        return found ? found.count : 0;
+                    
+                    // Process data
+                    const newsData = {};
+                    const darkpoolData = {};
+                    let totalNews = 0;
+                    let totalDarkpool = 0;
+                    
+                    data.forEach(item => {
+                        const hour = new Date(item.hour);
+                        const key = hour.toISOString();
+                        
+                        if (item.collector === 'news') {
+                            newsData[key] = item.count;
+                            totalNews += item.count;
+                        } else if (item.collector === 'darkpool') {
+                            darkpoolData[key] = item.count;
+                            totalDarkpool += item.count;
+                        }
                     });
-                    const darkpoolCounts = allIntervals.map(interval => {
-                        const found = data.darkpool.find(d => d.interval === interval);
-                        return found ? found.count : 0;
-                    });
-                    // Prepare chart data
+                    
+                    // Get all unique hours
+                    const allHours = [...new Set([...Object.keys(newsData), ...Object.keys(darkpoolData)])]
+                        .sort();
+                    
+                    // Prepare data for chart
+                    const newsCounts = allHours.map(hour => newsData[hour] || 0);
+                    const darkpoolCounts = allHours.map(hour => darkpoolData[hour] || 0);
+                    
+                    // Update summary statistics
+                    document.getElementById('totalNewsCount').textContent = totalNews;
+                    document.getElementById('totalDarkpoolCount').textContent = totalDarkpool;
+                    document.getElementById('avgNewsCount').textContent = 
+                        Math.round(totalNews / allHours.length);
+                    document.getElementById('avgDarkpoolCount').textContent = 
+                        Math.round(totalDarkpool / allHours.length);
+                    
                     const chartData = {
-                        labels: allIntervals.map(i => new Date(i).toLocaleString()),
+                        labels: allHours.map(h => new Date(h).toLocaleString()),
                         datasets: [
                             {
                                 label: 'News Collector',
                                 data: newsCounts,
                                 borderColor: '#007bff',
-                                backgroundColor: 'rgba(0,123,255,0.2)',
-                                fill: false,
-                                tension: 0.1
+                                backgroundColor: 'rgba(0,123,255,0.1)',
+                                fill: true,
+                                tension: 0.4,
+                                pointRadius: 3,
+                                pointHoverRadius: 5
                             },
                             {
                                 label: 'Darkpool Collector',
                                 data: darkpoolCounts,
                                 borderColor: '#28a745',
-                                backgroundColor: 'rgba(40,167,69,0.2)',
-                                fill: false,
-                                tension: 0.1
+                                backgroundColor: 'rgba(40,167,69,0.1)',
+                                fill: true,
+                                tension: 0.4,
+                                pointRadius: 3,
+                                pointHoverRadius: 5
                             }
                         ]
                     };
+                    
                     // Create or update chart
                     if (window.collectionCountsChart) {
                         window.collectionCountsChart.data = chartData;
@@ -650,13 +786,44 @@
                             data: chartData,
                             options: {
                                 responsive: true,
+                                maintainAspectRatio: false,
+                                interaction: {
+                                    intersect: false,
+                                    mode: 'index'
+                                },
                                 plugins: {
-                                    legend: { position: 'top' },
-                                    title: { display: false }
+                                    legend: {
+                                        position: 'top',
+                                        labels: {
+                                            usePointStyle: true,
+                                            padding: 20
+                                        }
+                                    },
+                                    tooltip: {
+                                        callbacks: {
+                                            label: function(context) {
+                                                return `${context.dataset.label}: ${context.raw} items`;
+                                            }
+                                        }
+                                    }
                                 },
                                 scales: {
-                                    x: { title: { display: true, text: 'Hour' } },
-                                    y: { title: { display: true, text: 'Items Collected' }, beginAtZero: true }
+                                    x: {
+                                        grid: {
+                                            display: false
+                                        },
+                                        ticks: {
+                                            maxRotation: 45,
+                                            minRotation: 45
+                                        }
+                                    },
+                                    y: {
+                                        beginAtZero: true,
+                                        title: {
+                                            display: true,
+                                            text: 'Items Collected'
+                                        }
+                                    }
                                 }
                             }
                         });
@@ -677,12 +844,27 @@
             window.open(url, '_blank');
         });
 
+        // Chart view toggle handlers
+        document.querySelectorAll('[data-chart-view]').forEach(button => {
+            button.addEventListener('click', function() {
+                // Update active state
+                document.querySelectorAll('[data-chart-view]').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                this.classList.add('active');
+                
+                // Update chart view
+                const view = this.dataset.chartView;
+                updateCollectionCountsChart(view);
+            });
+        });
+
         // Initial load
         updateStatus();
         updateHistory();
         updateLogs();
         updateDataFreshness();
-        updateCollectionCountsChart();
+        updateCollectionCountsChart('hourly');
 
         // Set up periodic updates
         setInterval(updateStatus, 30000);  // Every 30 seconds

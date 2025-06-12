@@ -69,12 +69,19 @@ def get_market_status() -> dict:
     """Get detailed market status information."""
     is_open = is_market_open()
     eastern = pytz.timezone('US/Eastern')
-    current_time = datetime.now(eastern)
-    
+    cest = pytz.timezone('Europe/Copenhagen')
+    current_time_et = datetime.now(eastern)
+    next_market_open_et = get_next_market_open()
+    # Convert to CEST
+    current_time_cest = current_time_et.astimezone(cest)
+    next_market_open_cest = next_market_open_et.astimezone(cest)
     status = {
         "is_market_open": is_open,
-        "current_time_et": current_time.strftime("%Y-%m-%d %H:%M:%S %Z"),
-        "next_market_open": get_next_market_open().strftime("%Y-%m-%d %H:%M:%S %Z")
+        "current_time_et": current_time_et.isoformat(),
+        "next_market_open_et": next_market_open_et.isoformat(),
+        "current_time_cest": current_time_cest.isoformat(),
+        "next_market_open_cest": next_market_open_cest.isoformat(),
+        "timezone_et": "US/Eastern",
+        "timezone_cest": "Europe/Copenhagen (CEST)"
     }
-    
     return status 

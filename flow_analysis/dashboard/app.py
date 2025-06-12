@@ -14,6 +14,7 @@ import io
 import csv
 import subprocess
 import pytz
+from collectors.utils.market_utils import get_market_status
 
 app = Flask(__name__)
 # Generate a secure secret key if not set
@@ -403,6 +404,11 @@ def restart_collector():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/market_status')
+@login_required
+def market_status():
+    return jsonify(get_market_status())
 
 # Temporary route-printing snippet
 print("Registered routes:", [rule.rule for rule in app.url_map.iter_rules()])
