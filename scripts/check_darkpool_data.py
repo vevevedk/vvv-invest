@@ -49,14 +49,18 @@ def get_latest_trades(symbol: str, limit: int = 5):
             
             trades = cur.fetchall()
             
-            print(f"\nLatest {limit} trades for {symbol}:")
-            print("-" * 100)
-            print(f"{'Time':25} | {'Price':10} | {'Size':8} | {'Volume':12} | {'Premium':10} | {'NBBO Ask':10} | {'NBBO Bid':10} | {'Market Center':15} | {'Sale Cond'}")
-            print("-" * 100)
-            
+            print(f"\nLatest {limit} trades for {symbol} (times shown in CEST):")
+            print("-" * 120)
+            print(f"{'Time (CEST)':25} | {'Price':10} | {'Size':8} | {'Volume':12} | {'Premium':10} | {'NBBO Ask':10} | {'NBBO Bid':10} | {'Market Center':15} | {'Sale Cond'}")
+            print("-" * 120)
+            cest = pytz.timezone('Europe/Copenhagen')
             for trade in trades:
                 executed_at, price, size, volume, premium, nbbo_ask, nbbo_bid, market_center, sale_cond = trade
-                print(f"{executed_at:25} | {price:10.2f} | {size:8,d} | {volume:12,.2f} | {premium:10.2f} | {nbbo_ask:10.2f} | {nbbo_bid:10.2f} | {market_center:15} | {sale_cond}")
+                # Convert to CEST
+                if executed_at.tzinfo is None:
+                    executed_at = pytz.UTC.localize(executed_at)
+                executed_at_cest = executed_at.astimezone(cest)
+                print(f"{executed_at_cest:%Y-%m-%d %H:%M:%S} | {price:10.2f} | {size:8,d} | {volume:12,.2f} | {premium:10.2f} | {nbbo_ask:10.2f} | {nbbo_bid:10.2f} | {market_center:15} | {sale_cond}")
             
     except Exception as e:
         print(f"Error: {str(e)}")
@@ -131,4 +135,6 @@ if __name__ == "__main__":
     check_darkpool_data()
     
     # Then show latest SPY trades
-    get_latest_trades("SPY", limit=10) 
+    get_latest_trades("SPY", limit=10)
+    # Then show latest QQQ trades
+    get_latest_trades("QQQ", limit=10) 

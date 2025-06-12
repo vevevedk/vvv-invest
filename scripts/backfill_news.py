@@ -5,6 +5,7 @@ import sys
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
+import traceback
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent

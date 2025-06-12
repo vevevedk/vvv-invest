@@ -13,6 +13,7 @@ import psycopg2
 import io
 import csv
 import subprocess
+import pytz
 
 app = Flask(__name__)
 # Generate a secure secret key if not set
@@ -63,7 +64,26 @@ def index():
 @app.route('/api/status')
 @login_required
 def status():
-    return jsonify(monitor.get_collector_health())
+    health = monitor.get_collector_health()
+    cest = pytz.timezone('Europe/Copenhagen')
+    # Convert any 'last_update' timestamps in health['collectors'] to CEST
+    for collector, status in health.get('collectors', {}).items():
+        last_update = status.get('last_update')
+        if last_update:
+            # Parse ISO string if needed
+            if isinstance(last_update, str):
+                try:
+                    dt = datetime.fromisoformat(last_update)
+                except Exception:
+                    continue
+            else:
+                dt = last_update
+            if dt.tzinfo is None:
+                dt = pytz.UTC.localize(dt)
+            dt_cest = dt.astimezone(cest)
+            health['collectors'][collector]['last_update'] = dt_cest.strftime('%Y-%m-%d %H:%M:%S %Z')
+            health['collectors'][collector]['timezone'] = 'Europe/Copenhagen (CEST)'
+    return jsonify(health)
 
 @app.route('/api/history')
 @login_required
@@ -71,10 +91,14 @@ def history():
     """Get historical status information for all collectors."""
     hours = request.args.get('hours', default=24, type=int)
     history_data = {}
-    
+    cest = pytz.timezone('Europe/Copenhagen')
     for collector_type in monitor.collectors:
-        history_data[collector_type] = monitor.get_collector_history(collector_type, hours)
-    
+        raw_history = monitor.get_collector_history(collector_type, hours)
+        # Convert all timestamps in history to CEST
+        history_data[collector_type] = [
+            {**h, 'timestamp': (h['timestamp'].astimezone(cest).strftime('%Y-%m-%d %H:%M:%S %Z') if h.get('timestamp') else None), 'timezone': 'Europe/Copenhagen (CEST)'}
+            for h in raw_history
+        ]
     return jsonify(history_data)
 
 @app.route('/api/logs')
@@ -86,7 +110,7 @@ def logs():
         collector = request.args.get('collector')
         level = request.args.get('level')
         hours = request.args.get('hours', default=1, type=int)
-        
+        cest = pytz.timezone('Europe/Copenhagen')
         with psycopg2.connect(**DB_CONFIG) as conn:
             with conn.cursor() as cur:
                 # Build query with filters
@@ -105,22 +129,18 @@ def logs():
                     WHERE timestamp > NOW() - INTERVAL '%s hours'
                 """
                 params = [hours]
-                
                 if collector:
                     query += " AND collector_name = %s"
                     params.append(collector)
                 if level:
                     query += " AND level = %s"
                     params.append(level)
-                
                 query += " ORDER BY timestamp DESC LIMIT 100"
-                
                 cur.execute(query, params)
                 logs = cur.fetchall()
-                
-                # Convert to list of dicts
+                # Convert to list of dicts with CEST timestamps
                 return jsonify([{
-                    'timestamp': log[0].isoformat(),
+                    'timestamp': (log[0].astimezone(cest).strftime('%Y-%m-%d %H:%M:%S %Z') if log[0] else None),
                     'collector': log[1],
                     'level': log[2],
                     'message': log[3],
@@ -128,7 +148,8 @@ def logs():
                     'details': log[5],
                     'is_heartbeat': log[6],
                     'status': log[7],
-                    'error_details': log[8]
+                    'error_details': log[8],
+                    'timezone': 'Europe/Copenhagen (CEST)'
                 } for log in logs])
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -138,6 +159,7 @@ def logs():
 def data_freshness():
     """Return data freshness and completeness info for each collector."""
     try:
+        cest = pytz.timezone('Europe/Copenhagen')
         with psycopg2.connect(**DB_CONFIG) as conn:
             with conn.cursor() as cur:
                 result = {}
@@ -154,14 +176,21 @@ def data_freshness():
                     delta = (datetime.now(timezone.utc) - news_last.astimezone(timezone.utc)).total_seconds()
                     if delta >= 3600:
                         news_status = 'stale'
+                    # Convert to CEST
+                    if news_last.tzinfo is None:
+                        news_last = pytz.UTC.localize(news_last)
+                    news_last_cest = news_last.astimezone(cest)
+                    news_last_str = news_last_cest.strftime('%Y-%m-%d %H:%M:%S %Z')
                 else:
                     news_status = 'stale'
+                    news_last_str = None
                 result['news'] = {
-                    'last_data_timestamp': news_last.isoformat() if news_last else None,
+                    'last_data_timestamp': news_last_str,
                     'items_collected': news_count,
                     'expected_items': news_expected,
                     'completeness': news_completeness,
-                    'status': news_status
+                    'status': news_status,
+                    'timezone': 'Europe/Copenhagen (CEST)'
                 }
                 # Darkpool Collector
                 cur.execute("SELECT MAX(executed_at) FROM trading.darkpool_trades;")
@@ -175,14 +204,21 @@ def data_freshness():
                     delta = (datetime.now(timezone.utc) - dp_last.astimezone(timezone.utc)).total_seconds()
                     if delta >= 3600:
                         dp_status = 'stale'
+                    # Convert to CEST
+                    if dp_last.tzinfo is None:
+                        dp_last = pytz.UTC.localize(dp_last)
+                    dp_last_cest = dp_last.astimezone(cest)
+                    dp_last_str = dp_last_cest.strftime('%Y-%m-%d %H:%M:%S %Z')
                 else:
                     dp_status = 'stale'
+                    dp_last_str = None
                 result['darkpool'] = {
-                    'last_data_timestamp': dp_last.isoformat() if dp_last else None,
+                    'last_data_timestamp': dp_last_str,
                     'items_collected': dp_count,
                     'expected_items': dp_expected,
                     'completeness': dp_completeness,
-                    'status': dp_status
+                    'status': dp_status,
+                    'timezone': 'Europe/Copenhagen (CEST)'
                 }
                 return jsonify(result)
     except Exception as e:
@@ -197,6 +233,7 @@ def export_data():
     end_time = request.args.get('end_time')
     output = io.StringIO()
     writer = csv.writer(output)
+    cest = pytz.timezone('Europe/Copenhagen')
     with psycopg2.connect(**DB_CONFIG) as conn:
         with conn.cursor() as cur:
             for collector in collectors:
@@ -215,9 +252,22 @@ def export_data():
                     cur.execute(query, params)
                     rows = cur.fetchall()
                     colnames = [desc[0] for desc in cur.description]
+                    # Write header and timezone info
                     writer.writerow([f'news_headlines: {len(rows)} rows'])
+                    writer.writerow([f'Timezone: Europe/Copenhagen (CEST)'])
                     writer.writerow(colnames)
-                    writer.writerows(rows)
+                    # Find datetime columns
+                    dt_indexes = [i for i, desc in enumerate(cur.description) if desc.type_code in (1114, 1184)]
+                    # 1114 = timestamp, 1184 = timestamptz
+                    for row in rows:
+                        row = list(row)
+                        for i in dt_indexes:
+                            if row[i]:
+                                # Convert to CEST and format
+                                if row[i].tzinfo is None:
+                                    row[i] = pytz.UTC.localize(row[i])
+                                row[i] = row[i].astimezone(cest).strftime('%Y-%m-%d %H:%M:%S %Z')
+                        writer.writerow(row)
                     writer.writerow([])
                 elif collector == 'darkpool':
                     query = "SELECT * FROM trading.darkpool_trades"
@@ -235,8 +285,17 @@ def export_data():
                     rows = cur.fetchall()
                     colnames = [desc[0] for desc in cur.description]
                     writer.writerow([f'darkpool_trades: {len(rows)} rows'])
+                    writer.writerow([f'Timezone: Europe/Copenhagen (CEST)'])
                     writer.writerow(colnames)
-                    writer.writerows(rows)
+                    dt_indexes = [i for i, desc in enumerate(cur.description) if desc.type_code in (1114, 1184)]
+                    for row in rows:
+                        row = list(row)
+                        for i in dt_indexes:
+                            if row[i]:
+                                if row[i].tzinfo is None:
+                                    row[i] = pytz.UTC.localize(row[i])
+                                row[i] = row[i].astimezone(cest).strftime('%Y-%m-%d %H:%M:%S %Z')
+                        writer.writerow(row)
                     writer.writerow([])
     output.seek(0)
     return send_file(
@@ -250,6 +309,7 @@ def export_data():
 @login_required
 def collection_counts():
     try:
+        cest = pytz.timezone('Europe/Copenhagen')
         with psycopg2.connect(**DB_CONFIG) as conn:
             with conn.cursor() as cur:
                 query = """
@@ -266,7 +326,12 @@ def collection_counts():
                 cur.execute(query)
                 results = cur.fetchall()
                 return jsonify([
-                    {'collector': row[0], 'hour': row[1].isoformat(), 'count': row[2]}
+                    {
+                        'collector': row[0],
+                        'hour': (row[1].astimezone(cest).strftime('%Y-%m-%d %H:%M:%S %Z') if row[1] else None),
+                        'count': row[2],
+                        'timezone': 'Europe/Copenhagen (CEST)'
+                    }
                     for row in results
                 ])
     except Exception as e:
