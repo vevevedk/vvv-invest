@@ -26,6 +26,12 @@ MARKET_HOLIDAYS = [
 # Timezone
 EASTERN = pytz.timezone('US/Eastern')
 
+# Collector hours (pre-market, regular, after-hours)
+COLLECTOR_PRE_MARKET_OPEN = time(4, 0)
+COLLECTOR_REGULAR_OPEN = time(9, 30)
+COLLECTOR_REGULAR_CLOSE = time(16, 0)
+COLLECTOR_AFTER_HOURS_CLOSE = time(20, 0)
+
 def is_market_open() -> bool:
     """
     Check if the US stock market is currently open.
@@ -65,22 +71,80 @@ def get_next_market_open() -> datetime:
     
     return current_time
 
+def is_collector_open() -> bool:
+    """
+    Check if the collector should be running (pre-market, regular, or after-hours).
+    """
+    eastern = pytz.timezone('US/Eastern')
+    current_time = datetime.now(eastern)
+    if current_time.weekday() >= 5:
+        return False
+    current_time_et = current_time.time()
+    # Pre-market
+    if COLLECTOR_PRE_MARKET_OPEN <= current_time_et < COLLECTOR_REGULAR_OPEN:
+        return True
+    # Regular
+    if COLLECTOR_REGULAR_OPEN <= current_time_et < COLLECTOR_REGULAR_CLOSE:
+        return True
+    # After-hours
+    if COLLECTOR_REGULAR_CLOSE <= current_time_et < COLLECTOR_AFTER_HOURS_CLOSE:
+        return True
+    return False
+
+def get_next_collector_open() -> datetime:
+    """
+    Get the next time the collector will run (pre-market, regular, or after-hours).
+    """
+    eastern = pytz.timezone('US/Eastern')
+    now = datetime.now(eastern)
+    today = now.date()
+    # If it's weekend, move to next Monday
+    while now.weekday() >= 5:
+        now += timedelta(days=1)
+        today = now.date()
+    t = now.time()
+    # If before pre-market
+    if t < COLLECTOR_PRE_MARKET_OPEN:
+        return now.replace(hour=COLLECTOR_PRE_MARKET_OPEN.hour, minute=0, second=0, microsecond=0)
+    # If in pre-market, next open is regular
+    if COLLECTOR_PRE_MARKET_OPEN <= t < COLLECTOR_REGULAR_OPEN:
+        return now.replace(hour=COLLECTOR_REGULAR_OPEN.hour, minute=COLLECTOR_REGULAR_OPEN.minute, second=0, microsecond=0)
+    # If in regular, next open is after-hours
+    if COLLECTOR_REGULAR_OPEN <= t < COLLECTOR_REGULAR_CLOSE:
+        return now.replace(hour=COLLECTOR_REGULAR_CLOSE.hour, minute=0, second=0, microsecond=0)
+    # If in after-hours, next open is tomorrow's pre-market
+    if COLLECTOR_REGULAR_CLOSE <= t < COLLECTOR_AFTER_HOURS_CLOSE:
+        return (now + timedelta(days=1)).replace(hour=COLLECTOR_PRE_MARKET_OPEN.hour, minute=0, second=0, microsecond=0)
+    # If after after-hours, next open is tomorrow's pre-market
+    if t >= COLLECTOR_AFTER_HOURS_CLOSE:
+        return (now + timedelta(days=1)).replace(hour=COLLECTOR_PRE_MARKET_OPEN.hour, minute=0, second=0, microsecond=0)
+    # Fallback
+    return now.replace(hour=COLLECTOR_PRE_MARKET_OPEN.hour, minute=0, second=0, microsecond=0)
+
 def get_market_status() -> dict:
-    """Get detailed market status information."""
+    """
+    Get detailed market status information, including collector open status and next collector open time.
+    """
     is_open = is_market_open()
+    is_collector = is_collector_open()
     eastern = pytz.timezone('US/Eastern')
     cest = pytz.timezone('Europe/Copenhagen')
     current_time_et = datetime.now(eastern)
     next_market_open_et = get_next_market_open()
+    next_collector_open_et = get_next_collector_open()
     # Convert to CEST
     current_time_cest = current_time_et.astimezone(cest)
     next_market_open_cest = next_market_open_et.astimezone(cest)
+    next_collector_open_cest = next_collector_open_et.astimezone(cest)
     status = {
         "is_market_open": is_open,
+        "is_collector_open": is_collector,
         "current_time_et": current_time_et.isoformat(),
         "next_market_open_et": next_market_open_et.isoformat(),
+        "next_collector_open_et": next_collector_open_et.isoformat(),
         "current_time_cest": current_time_cest.isoformat(),
         "next_market_open_cest": next_market_open_cest.isoformat(),
+        "next_collector_open_cest": next_collector_open_cest.isoformat(),
         "timezone_et": "US/Eastern",
         "timezone_cest": "Europe/Copenhagen (CEST)"
     }
