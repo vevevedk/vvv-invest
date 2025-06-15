@@ -713,6 +713,7 @@
             fetch('/api/collection_counts')
                 .then(response => response.json())
                 .then(data => {
+                    console.log('Collection counts data:', data); // Debug print
                     const ctx = document.getElementById('collectionCountsChart').getContext('2d');
                     
                     // Process data
