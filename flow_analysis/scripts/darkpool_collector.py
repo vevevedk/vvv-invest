@@ -48,13 +48,14 @@ class DatabaseLogHandler(logging.Handler):
             with self.conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO trading.collector_logs (timestamp, level, message)
-                    VALUES (%s, %s, %s)
+                    INSERT INTO trading.collector_logs (timestamp, level, message, status)
+                    VALUES (%s, %s, %s, %s)
                     """,
                     (
                         datetime.fromtimestamp(record.created).astimezone(),
                         record.levelname,
-                        self.format(record)
+                        self.format(record),
+                        getattr(record, 'status', None)
                     )
                 )
                 self.conn.commit()
@@ -537,6 +538,14 @@ class DarkPoolCollector:
         """Clean up resources on deletion."""
         self.close_db()
         self.logger.info("DarkPoolCollector object deleted and DB connection closed")
+
+def log_status(logger, status, message, level=logging.INFO):
+    log_record = logger.makeRecord(
+        logger.name, level, None, None,
+        message, None, None
+    )
+    log_record.status = status
+    logger.handle(log_record)
 
 def main():
     """Main entry point."""
