@@ -778,7 +778,7 @@
                     };
                     
                     // Always destroy and re-create the chart
-                    if (window.collectionCountsChart) {
+                    if (window.collectionCountsChart && typeof window.collectionCountsChart.destroy === 'function') {
                         window.collectionCountsChart.destroy();
                     }
                     window.collectionCountsChart = new Chart(ctx, {
