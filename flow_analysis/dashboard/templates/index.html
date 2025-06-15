@@ -710,7 +710,7 @@
 
         // Fetch and update collection counts chart
         function updateCollectionCountsChart(view) {
-            fetch('/api/collection_counts')
+            fetch(`/api/collection_counts?view=${view}`)
                 .then(response => response.json())
                 .then(data => {
                     console.log('Collection counts data:', data); // Debug print
@@ -851,7 +851,6 @@
                     btn.classList.remove('active');
                 });
                 this.classList.add('active');
-                
                 // Update chart view
                 const view = this.dataset.chartView;
                 updateCollectionCountsChart(view);

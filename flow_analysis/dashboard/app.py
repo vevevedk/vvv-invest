@@ -307,27 +307,29 @@ def export_data():
 @app.route('/api/collection_counts')
 @login_required
 def collection_counts():
+    view = request.args.get('view', 'hourly')
+    group_by = "date_trunc('hour', timestamp)" if view == 'hourly' else "date_trunc('day', timestamp)"
     try:
         cest = pytz.timezone('Europe/Copenhagen')
         with psycopg2.connect(**DB_CONFIG) as conn:
             with conn.cursor() as cur:
-                query = """
+                query = f"""
                 SELECT
                     collector_name,
-                    date_trunc('hour', timestamp) as hour,
+                    {group_by} as interval,
                     COUNT(*) as count
                 FROM trading.collector_logs
                 WHERE status = 'collected'
                   AND timestamp >= NOW() - INTERVAL '24 hours'
-                GROUP BY collector_name, hour
-                ORDER BY hour DESC
+                GROUP BY collector_name, interval
+                ORDER BY interval DESC
                 """
                 cur.execute(query)
                 results = cur.fetchall()
                 return jsonify([
                     {
                         'collector': row[0],
-                        'hour': (row[1].astimezone(cest).isoformat() if row[1] else None),
+                        'interval': (row[1].astimezone(cest).isoformat() if row[1] else None),
                         'count': row[2],
                         'timezone': 'Europe/Copenhagen (CEST)'
                     }
