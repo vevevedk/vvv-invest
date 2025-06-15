@@ -777,58 +777,56 @@
                         ]
                     };
                     
-                    // Create or update chart
+                    // Always destroy and re-create the chart
                     if (window.collectionCountsChart) {
-                        window.collectionCountsChart.data = chartData;
-                        window.collectionCountsChart.update();
-                    } else {
-                        window.collectionCountsChart = new Chart(ctx, {
-                            type: 'line',
-                            data: chartData,
-                            options: {
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                interaction: {
-                                    intersect: false,
-                                    mode: 'index'
-                                },
-                                plugins: {
-                                    legend: {
-                                        position: 'top',
-                                        labels: {
-                                            usePointStyle: true,
-                                            padding: 20
-                                        }
-                                    },
-                                    tooltip: {
-                                        callbacks: {
-                                            label: function(context) {
-                                                return `${context.dataset.label}: ${context.raw} items`;
-                                            }
-                                        }
+                        window.collectionCountsChart.destroy();
+                    }
+                    window.collectionCountsChart = new Chart(ctx, {
+                        type: 'line',
+                        data: chartData,
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: {
+                                intersect: false,
+                                mode: 'index'
+                            },
+                            plugins: {
+                                legend: {
+                                    position: 'top',
+                                    labels: {
+                                        usePointStyle: true,
+                                        padding: 20
                                     }
                                 },
-                                scales: {
-                                    x: {
-                                        grid: {
-                                            display: false
-                                        },
-                                        ticks: {
-                                            maxRotation: 45,
-                                            minRotation: 45
-                                        }
-                                    },
-                                    y: {
-                                        beginAtZero: true,
-                                        title: {
-                                            display: true,
-                                            text: 'Items Collected'
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            return `${context.dataset.label}: ${context.raw} items`;
                                         }
                                     }
                                 }
+                            },
+                            scales: {
+                                x: {
+                                    grid: {
+                                        display: false
+                                    },
+                                    ticks: {
+                                        maxRotation: 45,
+                                        minRotation: 45
+                                    }
+                                },
+                                y: {
+                                    beginAtZero: true,
+                                    title: {
+                                        display: true,
+                                        text: 'Items Collected'
+                                    }
+                                }
                             }
-                        });
-                    }
+                        }
+                    });
                 });
         }
 
