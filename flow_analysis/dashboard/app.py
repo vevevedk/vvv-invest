@@ -15,6 +15,7 @@ import csv
 import subprocess
 import pytz
 from collectors.utils.market_utils import get_market_status
+from dateutil import parser
 
 app = Flask(__name__)
 # Generate a secure secret key if not set
@@ -93,10 +94,19 @@ def history():
     cest = pytz.timezone('Europe/Copenhagen')
     for collector_type in monitor.collectors:
         raw_history = monitor.get_collector_history(collector_type, hours)
-        history_data[collector_type] = [
-            {**h, 'timestamp': (h['timestamp'].astimezone(cest).isoformat() if h.get('timestamp') else None), 'timezone': 'Europe/Copenhagen (CEST)'}
-            for h in raw_history
-        ]
+        def parse_and_convert(h):
+            ts = h.get('timestamp')
+            if ts:
+                if isinstance(ts, str):
+                    try:
+                        ts = parser.isoparse(ts)
+                    except Exception:
+                        return {**h, 'timestamp': ts, 'timezone': 'Europe/Copenhagen (CEST)'}
+                ts = ts.astimezone(cest).isoformat()
+            else:
+                ts = None
+            return {**h, 'timestamp': ts, 'timezone': 'Europe/Copenhagen (CEST)'}
+        history_data[collector_type] = [parse_and_convert(h) for h in raw_history]
     return jsonify(history_data)
 
 @app.route('/api/logs')
@@ -324,8 +334,10 @@ def collection_counts():
                     for row in results
                 ])
     except Exception as e:
-        print(f"Error in collection_counts: {e}")
-        return jsonify([])
+        import traceback
+        print("Error in /api/collection_counts:", e)
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/backfill', methods=['POST'])
 @login_required
