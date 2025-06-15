@@ -723,36 +723,46 @@
                     let totalDarkpool = 0;
                     
                     data.forEach(item => {
-                        const hour = new Date(item.hour);
-                        const key = hour.toISOString();
-                        
+                        const interval = item.interval;
+                        if (!interval) return; // skip invalid/null
                         if (item.collector === 'news') {
-                            newsData[key] = item.count;
+                            newsData[interval] = item.count;
                             totalNews += item.count;
                         } else if (item.collector === 'darkpool') {
-                            darkpoolData[key] = item.count;
+                            darkpoolData[interval] = item.count;
                             totalDarkpool += item.count;
                         }
                     });
                     
-                    // Get all unique hours
-                    const allHours = [...new Set([...Object.keys(newsData), ...Object.keys(darkpoolData)])]
+                    // Get all unique intervals, filter out invalids
+                    const allIntervals = [...new Set([...Object.keys(newsData), ...Object.keys(darkpoolData)])]
+                        .filter(i => !!i)
                         .sort();
                     
+                    // Prepare labels, handle invalid dates
+                    const labels = allIntervals.map(i => {
+                        const d = new Date(i);
+                        if (isNaN(d)) {
+                            console.warn('Invalid interval for chart label:', i);
+                            return '';
+                        }
+                        return d.toLocaleString();
+                    });
+                    
                     // Prepare data for chart
-                    const newsCounts = allHours.map(hour => newsData[hour] || 0);
-                    const darkpoolCounts = allHours.map(hour => darkpoolData[hour] || 0);
+                    const newsCounts = allIntervals.map(interval => newsData[interval] || 0);
+                    const darkpoolCounts = allIntervals.map(interval => darkpoolData[interval] || 0);
                     
                     // Update summary statistics
                     document.getElementById('totalNewsCount').textContent = totalNews;
                     document.getElementById('totalDarkpoolCount').textContent = totalDarkpool;
                     document.getElementById('avgNewsCount').textContent = 
-                        Math.round(totalNews / allHours.length);
+                        Math.round(totalNews / allIntervals.length);
                     document.getElementById('avgDarkpoolCount').textContent = 
-                        Math.round(totalDarkpool / allHours.length);
+                        Math.round(totalDarkpool / allIntervals.length);
                     
                     const chartData = {
-                        labels: allHours.map(h => new Date(h).toLocaleString()),
+                        labels: labels,
                         datasets: [
                             {
                                 label: 'News Collector',
